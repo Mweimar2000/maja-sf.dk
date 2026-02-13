@@ -9,7 +9,7 @@
 * HOVEDÆNDRINGER FRA v6.0:
 *   1. Håndterer ZIP-vedhæftninger fra e-mails
 *   2. Udpakker og læser PDF'er direkte
-*   3. Forbedret web-scraping af bcdagsorden.dk
+*   3. Forbedret web-scraping af dagsordener.middelfart.dk
 *   4. Fakta-fokuserede prompts (ingen hallucination)
 *   5. Detaljeret logging til fejlfinding
 *
@@ -384,7 +384,7 @@ function fetchContentFromUrl_(url) {
     // HTML side
     const html = response.getContentText();
 
-    // Søg efter PDF-links på bcdagsorden.dk
+    // Søg efter PDF-links på dagsordener.middelfart.dk
     const pdfUrl = findPdfLinkInHtml_(html, url);
     if (pdfUrl) {
       console.log(`   📄 Fandt PDF-link: ${pdfUrl}`);
@@ -404,7 +404,7 @@ function fetchContentFromUrl_(url) {
 }
 
 /**
- * Finder PDF-links i HTML fra bcdagsorden.dk
+ * Finder PDF-links i HTML fra dagsordener.middelfart.dk
  */
 function findPdfLinkInHtml_(html, baseUrl) {
   // Prøv forskellige mønstre for at finde PDF-links
@@ -1076,7 +1076,7 @@ function debugTestGemini() {
  * Test funktion til at hente indhold fra URL
  */
 function debugTestUrlFetch() {
-  const testUrl = "https://middelfart.bcdagsorden.dk/da";
+  const testUrl = "https://dagsordener.middelfart.dk/";
   const result  = fetchContentFromUrl_(testUrl);
 
   console.log("Success:", result.success);
