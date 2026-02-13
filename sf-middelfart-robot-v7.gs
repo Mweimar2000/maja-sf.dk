@@ -1,5 +1,10 @@
 /***********************************************************************
-* SF MIDDELFART NYHEDSBREV — v7.1 (FAKTABASERET + AFMELDINGS-BESKYTTELSE)
+* SF MIDDELFART NYHEDSBREV — v7.2 (FAKTABASERET + AFMELDINGS-BESKYTTELSE)
+*
+* ÆNDRINGER FRA v7.1:
+*   - Opdateret domænereferencer til dagsordener.middelfart.dk
+*   - Opdateret Gemini model til stabil version
+*   - Forbedret fejlhåndtering ved API-kald
 *
 * ÆNDRINGER FRA v7.0:
 *   - Tilføjet BLOCKED_URL_PATTERNS i CFG (afmeldings-links blokeres)
@@ -33,7 +38,7 @@ const CFG = {
   P_TEMPLATE_DOC_ID: "TEMPLATE_DOC_ID",
 
   // Model konfiguration
-  MODEL_NAME: "gemini-3-flash-preview",
+  MODEL_NAME: "gemini-2.0-flash",
 
   // Behandlingsgrænser
   MAX_THREADS_PER_RUN:    30,
@@ -99,7 +104,7 @@ function setupOnce_createTriggers() {
     .atHour(13)
     .create();
 
-  console.log("✅ v7.1 Presse-Robot er klar!");
+  console.log("✅ v7.2 Presse-Robot er klar!");
   console.log("📧 Daglig indsamling: Hver dag kl. 12:00");
   console.log("📰 Ugentligt nyhedsbrev: Søndag kl. 13:00");
 }
@@ -362,7 +367,7 @@ function fetchContentFromUrl_(url) {
       muteHttpExceptions: true,
       followRedirects: true,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/7.1)',
+        'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/7.2)',
         'Accept': 'text/html,application/pdf,*/*'
       }
     });
@@ -638,7 +643,7 @@ Returner KUN valid JSON, ingen anden tekst.
 }
 
 /**
- * Kalder Gemini API med tekst
+ * Kalder Gemini API med tekst (med retry ved fejl)
  */
 function callGeminiJson_(apiKey, prompt) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
@@ -651,25 +656,37 @@ function callGeminiJson_(apiKey, prompt) {
     }
   };
 
-  const response = UrlFetchApp.fetch(url, {
+  const options = {
     method: "post",
     contentType: "application/json",
     headers: { "x-goog-api-key": apiKey },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
-  });
+  };
 
-  const json = JSON.parse(response.getContentText());
+  // Retry op til 2 gange ved midlertidige fejl
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
 
-  if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-    return json.candidates[0].content.parts[0].text;
+    if (code === 429 || code >= 500) {
+      console.log(`  ⚠️ API fejl ${code}, forsøg ${attempt + 1}/3...`);
+      if (attempt < 2) { Utilities.sleep(2000 * (attempt + 1)); continue; }
+      throw new Error(`API fejl ${code} efter 3 forsøg`);
+    }
+
+    const json = JSON.parse(response.getContentText());
+
+    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
+      return json.candidates[0].content.parts[0].text;
+    }
+
+    throw new Error(`Uventet API-svar (HTTP ${code})`);
   }
-
-  throw new Error("Uventet API-svar");
 }
 
 /**
- * Kalder Gemini API med PDF
+ * Kalder Gemini API med PDF (med retry ved fejl)
  */
 function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
@@ -687,21 +704,33 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
     }
   };
 
-  const response = UrlFetchApp.fetch(url, {
+  const options = {
     method: "post",
     contentType: "application/json",
     headers: { "x-goog-api-key": apiKey },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
-  });
+  };
 
-  const json = JSON.parse(response.getContentText());
+  // Retry op til 2 gange ved midlertidige fejl
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
 
-  if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-    return json.candidates[0].content.parts[0].text;
+    if (code === 429 || code >= 500) {
+      console.log(`  ⚠️ PDF API fejl ${code}, forsøg ${attempt + 1}/3...`);
+      if (attempt < 2) { Utilities.sleep(2000 * (attempt + 1)); continue; }
+      throw new Error(`PDF API fejl ${code} efter 3 forsøg`);
+    }
+
+    const json = JSON.parse(response.getContentText());
+
+    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
+      return json.candidates[0].content.parts[0].text;
+    }
+
+    throw new Error(`Uventet API-svar fra PDF-analyse (HTTP ${code})`);
   }
-
-  throw new Error("Uventet API-svar fra PDF-analyse");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -785,7 +814,7 @@ function generateWeeklyDraft() {
     + `- Mellem-sager (score 3): ${mediumStories.length}\n`
     + `- Administrative (score 1-2): ${adminItems.length}\n\n`
     + `Husk at gennemse og tilføje din personlige SF-vinkel!\n\n`
-    + `/Din SF Presse-Robot v7.1 🤖`
+    + `/Din SF Presse-Robot v7.2 🤖`
   );
 
   console.log(`\n✅ Nyhedsbrev oprettet: ${docUrl}`);
