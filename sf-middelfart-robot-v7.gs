@@ -1,5 +1,13 @@
 /***********************************************************************
-* SF MIDDELFART NYHEDSBREV — v7.2 (FAKTABASERET + AFMELDINGS-BESKYTTELSE)
+* SF MIDDELFART NYHEDSBREV — v8.0 (FIRSTAGENDA API + FAKTABASERET)
+*
+* ÆNDRINGER FRA v7.2:
+*   - STOR ÆNDRING: Henter nu dagsordenspunkter direkte via FirstAgenda API
+*     i stedet for at forsøge at scrape JavaScript-renderet HTML
+*   - Ny funktion: ingestFromFirstAgendaApi() henter alle udvalg og møder
+*   - Dagsordenspunkter med fuld tekst (beslutning, indstilling, sagsbeskrivelse)
+*   - Automatisk authentication mod dagsordener.middelfart.dk
+*   - Bevarer email-baseret indsamling som supplement
 *
 * ÆNDRINGER FRA v7.1:
 *   - Opdateret domænereferencer til dagsordener.middelfart.dk
@@ -9,12 +17,11 @@
 * ÆNDRINGER FRA v7.0:
 *   - Tilføjet BLOCKED_URL_PATTERNS i CFG (afmeldings-links blokeres)
 *   - extractUrls_() filtrerer nu farlige links fra
-*   - Fjernet duplikeret mustGet_() funktion
 *
 * HOVEDÆNDRINGER FRA v6.0:
 *   1. Håndterer ZIP-vedhæftninger fra e-mails
 *   2. Udpakker og læser PDF'er direkte
-*   3. Forbedret web-scraping af dagsordener.middelfart.dk
+*   3. Henter data via FirstAgenda API (dagsordener.middelfart.dk)
 *   4. Fakta-fokuserede prompts (ingen hallucination)
 *   5. Detaljeret logging til fejlfinding
 *
@@ -36,6 +43,13 @@ const CFG = {
   P_API_KEY:         "GEMINI_API_KEY",
   P_DRAFT_FOLDER_ID: "DRAFT_FOLDER_ID",
   P_TEMPLATE_DOC_ID: "TEMPLATE_DOC_ID",
+
+  // FirstAgenda API konfiguration
+  FA_BASE_URL:  "https://dagsordener.middelfart.dk",
+  FA_AUTH_PATH: "/Home/AnonymousAuthentication?callback=https%3a%2f%2fdagsordener.middelfart.dk%2f",
+  FA_API_COMMITTEES: "/api/agenda/udvalgsliste",
+  FA_API_AGENDA:     "/api/agenda/dagsorden/",  // + meetingId
+  FA_DAYS_BACK:      7,  // Hent møder fra de sidste N dage
 
   // Model konfiguration
   MODEL_NAME: "gemini-2.0-flash",
@@ -90,8 +104,8 @@ function setupOnce_createTriggers() {
   // Slet gamle triggers
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
 
-  // Daglig indsamling kl. 12:00
-  ScriptApp.newTrigger("ingestInboxEmails")
+  // Daglig indsamling kl. 12:00 (primær: FirstAgenda API)
+  ScriptApp.newTrigger("dailyIngest")
     .timeBased()
     .everyDays(1)
     .atHour(12)
@@ -104,9 +118,33 @@ function setupOnce_createTriggers() {
     .atHour(13)
     .create();
 
-  console.log("✅ v7.2 Presse-Robot er klar!");
-  console.log("📧 Daglig indsamling: Hver dag kl. 12:00");
+  console.log("✅ v8.0 Presse-Robot er klar!");
+  console.log("📡 Daglig indsamling: Hver dag kl. 12:00 (FirstAgenda API + email)");
   console.log("📰 Ugentligt nyhedsbrev: Søndag kl. 13:00");
+}
+
+/**
+ * Kombineret daglig indsamling: Først API, derefter emails
+ */
+function dailyIngest() {
+  console.log("🔄 Starter daglig indsamling...\n");
+
+  // Primær kilde: FirstAgenda API (det faktiske indhold)
+  try {
+    ingestFromFirstAgendaApi();
+  } catch (e) {
+    console.log(`❌ FirstAgenda fejl: ${e.message}`);
+    console.log("   Fortsætter med email-indsamling...\n");
+  }
+
+  // Supplerende kilde: Gmail (notifikationer)
+  try {
+    ingestInboxEmails();
+  } catch (e) {
+    console.log(`❌ Email-fejl: ${e.message}`);
+  }
+
+  console.log("\n✅ Daglig indsamling afsluttet");
 }
 
 /**
@@ -114,16 +152,262 @@ function setupOnce_createTriggers() {
  */
 function testManualRun() {
   console.log("🧪 Starter manuel test...");
+  ingestFromFirstAgendaApi();
   ingestInboxEmails();
   generateWeeklyDraft();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   DAGLIG INDSAMLING (INGEST)
+   FIRSTAGENDA API — DIREKTE INDSAMLING FRA dagsordener.middelfart.dk
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Henter dagsordenspunkter direkte fra FirstAgenda API'en.
+ * Dette er den PRIMÆRE datakilde — langt bedre end email-scraping.
+ */
+function ingestFromFirstAgendaApi() {
+  console.log("📡 Starter indsamling fra FirstAgenda API...\n");
+
+  const props   = PropertiesService.getScriptProperties();
+  const sheetId = mustGet_(props, CFG.P_SHEET_ID);
+  const ss      = SpreadsheetApp.openById(sheetId);
+  const sheetName = props.getProperty(CFG.P_SHEET_NAME) || "Inbox";
+  const sheet   = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    throw new Error(`❌ Ark '${sheetName}' findes ikke!`);
+  }
+
+  // TRIN 1: Autenticer mod FirstAgenda (anonym auth)
+  const cookies = authenticateFirstAgenda_();
+
+  // TRIN 2: Hent udvalgsliste med møder
+  const committees = fetchCommitteeList_(cookies);
+
+  // TRIN 3: Find møder fra de sidste N dage
+  const cutoff   = new Date(Date.now() - CFG.FA_DAYS_BACK * 24 * 60 * 60 * 1000);
+  const lastFaMs = Number(props.getProperty("LAST_FA_PROCESSED_MS") || 0);
+  const tz       = Session.getScriptTimeZone();
+  const newRows  = [];
+
+  for (const committee of committees) {
+    for (const meeting of committee.meetings) {
+      const meetingDate = new Date(meeting.Dato);
+
+      // Spring over møder der er for gamle eller allerede behandlet
+      if (meetingDate < cutoff) continue;
+      if (meetingDate.getTime() <= lastFaMs) continue;
+
+      console.log(`\n📋 ${committee.name}: ${meeting.Navn || "Møde"} (${meeting.Dato.slice(0,10)})`);
+
+      // TRIN 4: Hent fuld dagsorden for dette møde
+      const agendaItems = fetchMeetingAgenda_(cookies, meeting.Id);
+
+      if (!agendaItems || agendaItems.length === 0) {
+        console.log(`   ℹ️ Ingen åbne punkter`);
+        continue;
+      }
+
+      console.log(`   📝 ${agendaItems.length} dagsordenspunkter`);
+
+      for (const item of agendaItems) {
+        if (!item.IsOpen) continue;  // Spring lukkede punkter over
+
+        const content = extractContentFromAgendaItem_(item);
+        const receivedAt = Utilities.formatDate(meetingDate, tz, "yyyy-MM-dd HH:mm");
+        const sourceType = meeting.Afsluttet ? "Referat" : "Dagsorden";
+        const itemUrl = `${CFG.FA_BASE_URL}/Vis/${sourceType === "Referat" ? "Referat" : "Dagsorden"}/${meeting.Id}`;
+
+        newRows.push([
+          receivedAt,                              // A: Modtaget
+          sourceType,                              // B: Type
+          committee.name,                          // C: Udvalg
+          item.Caption || item.Navn || "Ukendt",   // D: Emne
+          "FirstAgenda API",                        // E: Fra
+          `FA:${meeting.Id}:${item.Id}`,           // F: ID
+          itemUrl,                                  // G: URL
+          content.slice(0, 2000),                  // H: Snippet
+          item.Bilag ? item.Bilag.map(b => b.Navn).join("; ") : "",  // I: Bilag
+          "",                                       // J: TLDR
+          "",                                       // K: SF Analyse
+          "",                                       // L: Konkrete fakta
+          "",                                       // M: Beløb/tal
+          "",                                       // N: Score
+          ""                                        // O: Match
+        ]);
+      }
+    }
+  }
+
+  if (newRows.length > 0) {
+    console.log(`\n✅ ${newRows.length} nye dagsordenspunkter fra FirstAgenda`);
+
+    // Tjek for duplikater (baseret på ID i kolonne F)
+    const existingIds = new Set();
+    const allData = sheet.getDataRange().getValues();
+    for (let i = 1; i < allData.length; i++) {
+      existingIds.add(String(allData[i][5]));
+    }
+
+    const uniqueRows = newRows.filter(row => !existingIds.has(String(row[5])));
+    console.log(`   📊 ${uniqueRows.length} nye (${newRows.length - uniqueRows.length} duplikater sprunget over)`);
+
+    if (uniqueRows.length > 0) {
+      const startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, uniqueRows.length, uniqueRows[0].length).setValues(uniqueRows);
+
+      // Analyser med Gemini
+      analyzeNewRows_(sheet, startRow, uniqueRows.length);
+
+      // Gem tidsstempel
+      const maxMs = Math.max(...newRows.map(r => new Date(r[0]).getTime()));
+      props.setProperty("LAST_FA_PROCESSED_MS", String(maxMs));
+    }
+  } else {
+    console.log("\nℹ️ Ingen nye dagsordenspunkter fra FirstAgenda");
+  }
+}
+
+/**
+ * Autenticer mod FirstAgenda (anonym authentication)
+ * Returnerer cookies til brug i efterfølgende requests
+ */
+function authenticateFirstAgenda_() {
+  console.log("🔑 Autenticerer mod FirstAgenda...");
+
+  const authUrl = CFG.FA_BASE_URL + CFG.FA_AUTH_PATH;
+  const response = UrlFetchApp.fetch(authUrl, {
+    muteHttpExceptions: true,
+    followRedirects: false,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/8.0)'
+    }
+  });
+
+  // Udtræk Set-Cookie headers
+  const headers = response.getAllHeaders();
+  const setCookies = headers['Set-Cookie'] || [];
+  const cookieList = Array.isArray(setCookies) ? setCookies : [setCookies];
+
+  const cookies = cookieList
+    .map(c => c.split(';')[0])
+    .filter(Boolean)
+    .join('; ');
+
+  console.log(`   ✅ Auth OK (${cookieList.length} cookies)`);
+  return cookies;
+}
+
+/**
+ * Henter udvalgsliste med møder fra FirstAgenda API
+ */
+function fetchCommitteeList_(cookies) {
+  console.log("📋 Henter udvalgsliste...");
+
+  const url = CFG.FA_BASE_URL + CFG.FA_API_COMMITTEES;
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    headers: {
+      'Cookie': cookies,
+      'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/8.0)',
+      'Accept': 'application/json'
+    }
+  });
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`FirstAgenda API fejl: HTTP ${response.getResponseCode()}`);
+  }
+
+  const data = JSON.parse(response.getContentText());
+  const committees = [];
+
+  // data.Udvalg er et objekt med gruppenavn som nøgler
+  for (const [groupName, udvalgList] of Object.entries(data.Udvalg)) {
+    for (const udvalg of udvalgList) {
+      committees.push({
+        id: udvalg.Id,
+        name: udvalg.Navn,
+        meetings: udvalg.Moeder || []
+      });
+    }
+  }
+
+  console.log(`   ✅ Fandt ${committees.length} udvalg`);
+  return committees;
+}
+
+/**
+ * Henter fuld dagsorden for et specifikt møde
+ */
+function fetchMeetingAgenda_(cookies, meetingId) {
+  const url = CFG.FA_BASE_URL + CFG.FA_API_AGENDA + meetingId;
+
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      headers: {
+        'Cookie': cookies,
+        'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/8.0)',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.getResponseCode() !== 200) {
+      console.log(`   ⚠️ Kunne ikke hente dagsorden: HTTP ${response.getResponseCode()}`);
+      return [];
+    }
+
+    const data = JSON.parse(response.getContentText());
+    return data.Dagsordenpunkter || [];
+  } catch (e) {
+    console.log(`   ❌ Fejl ved hentning af dagsorden: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Udtrækker læsbar tekst fra et dagsordenspunkt
+ * API'en returnerer HTML i Felter[].Html med beslutninger, indstillinger, sagsbeskrivelser
+ */
+function extractContentFromAgendaItem_(item) {
+  const parts = [];
+
+  // Titel
+  parts.push(`PUNKT ${item.Number || item.Punktnummer}: ${item.Caption || item.Navn}`);
+
+  // Sagsnummer
+  if (item.CaseNumber || item.SagsNummer) {
+    parts.push(`Sagsnr: ${item.CaseNumber || item.SagsNummer}`);
+  }
+
+  // Udtræk indhold fra Felter (her ligger alt det gode)
+  if (item.Felter && item.Felter.length > 0) {
+    for (const felt of item.Felter) {
+      if (felt.Html) {
+        // Konverter HTML til læsbar tekst
+        const text = extractTextFromHtml_(felt.Html);
+        parts.push(text);
+      }
+      if (felt.Tekst) {
+        parts.push(felt.Tekst);
+      }
+    }
+  }
+
+  // Bilag navne
+  if (item.Bilag && item.Bilag.length > 0) {
+    parts.push(`\nBILAG: ${item.Bilag.map(b => b.Navn).join(", ")}`);
+  }
+
+  return parts.join("\n\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DAGLIG INDSAMLING FRA EMAIL (SUPPLEMENT)
    ═══════════════════════════════════════════════════════════════════════ */
 
 function ingestInboxEmails() {
-  console.log("📥 Starter daglig indsamling...");
+  console.log("📥 Starter email-indsamling (supplement)...");
 
   const props   = PropertiesService.getScriptProperties();
   const sheetId = mustGet_(props, CFG.P_SHEET_ID);
@@ -367,7 +651,7 @@ function fetchContentFromUrl_(url) {
       muteHttpExceptions: true,
       followRedirects: true,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/7.2)',
+        'User-Agent': 'Mozilla/5.0 (compatible; SF-Middelfart-Bot/8.0)',
         'Accept': 'text/html,application/pdf,*/*'
       }
     });
@@ -814,7 +1098,7 @@ function generateWeeklyDraft() {
     + `- Mellem-sager (score 3): ${mediumStories.length}\n`
     + `- Administrative (score 1-2): ${adminItems.length}\n\n`
     + `Husk at gennemse og tilføje din personlige SF-vinkel!\n\n`
-    + `/Din SF Presse-Robot v7.2 🤖`
+    + `/Din SF Presse-Robot v8.0 🤖`
   );
 
   console.log(`\n✅ Nyhedsbrev oprettet: ${docUrl}`);
@@ -1111,6 +1395,41 @@ function debugTestUrlFetch() {
   console.log("Success:", result.success);
   console.log("Er PDF:", result.isPdf);
   console.log("Indhold (første 500 tegn):", (result.content || "").slice(0, 500));
+}
+
+/**
+ * Test funktion til FirstAgenda API
+ */
+function debugTestFirstAgendaApi() {
+  console.log("🧪 Tester FirstAgenda API...\n");
+
+  // 1. Auth
+  const cookies = authenticateFirstAgenda_();
+  console.log("✅ Auth OK\n");
+
+  // 2. Hent udvalg
+  const committees = fetchCommitteeList_(cookies);
+  console.log(`✅ ${committees.length} udvalg fundet:\n`);
+  for (const c of committees) {
+    console.log(`   📋 ${c.name} (${c.meetings.length} møder)`);
+  }
+
+  // 3. Hent nyeste møde fra første udvalg
+  if (committees.length > 0 && committees[0].meetings.length > 0) {
+    const firstMeeting = committees[0].meetings[0];
+    console.log(`\n📝 Henter dagsorden for: ${committees[0].name} (${firstMeeting.Dato.slice(0,10)})`);
+
+    const items = fetchMeetingAgenda_(cookies, firstMeeting.Id);
+    console.log(`   ${items.length} dagsordenspunkter:\n`);
+
+    for (const item of items) {
+      if (!item.IsOpen) { console.log(`   🔒 ${item.Caption} (lukket)`); continue; }
+
+      const content = extractContentFromAgendaItem_(item);
+      console.log(`   📄 ${item.Caption}`);
+      console.log(`      ${content.slice(0, 300)}...\n`);
+    }
+  }
 }
 
 /**
