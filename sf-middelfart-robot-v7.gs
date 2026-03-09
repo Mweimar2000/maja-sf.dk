@@ -81,15 +81,13 @@ const CFG = {
                "social", "psykiatri", "handicap"],
   },
 
-  // Administrative emneord der skal ignoreres
+  // Administrative emneord der KUN skal springes over (kun rene formalia)
   ADMIN_KEYWORDS: [
-    "mødeplan", "mødedatoer", "fastsættelse af møde", "tidsplan",
+    "mødeplan", "mødedatoer", "fastsættelse af møde",
     "godkendelse af dagsorden", "godkendelse af referat",
-    "beslutningsprotokol", "orientering om", "meddelelser",
-    "siden sidst", "nyt fra formanden", "valg af", "udpegning af",
-    "konstituering", "sammensætning", "underskriftsark", "fraværende",
+    "beslutningsprotokol", "underskriftsark", "fraværende",
     "bemærkninger til dagsorden", "kompetencefordeling",
-    "forretningsorden", "lukkede punkter"
+    "forretningsorden", "lukkede punkter", "konstituering"
   ]
 };
 
@@ -226,7 +224,7 @@ function ingestFromFirstAgendaApi() {
           "FirstAgenda API",                        // E: Fra
           `FA:${meeting.Id}:${item.Id}`,           // F: ID
           itemUrl,                                  // G: URL
-          content.slice(0, 2000),                  // H: Snippet
+          content.slice(0, 8000),                  // H: Snippet (mere tekst = bedre analyse)
           item.Bilag ? item.Bilag.map(b => b.Navn).join("; ") : "",  // I: Bilag
           "",                                       // J: TLDR
           "",                                       // K: SF Analyse
@@ -804,12 +802,14 @@ function analyzeNewRows_(sheet, startRow, numRows) {
 
     console.log(`\n📋 Analyserer: ${subject}`);
 
-    // TRIN 1: Check om det er administrativt
+    const from = row[4];  // E: Fra
+
+    // TRIN 1: Check om det er rent administrativt (kun baseret på emne)
     if (isAdministrativeSubject_(subject)) {
-      console.log(`   ⏭️ Sprunget over (administrativt)`);
+      console.log(`   ⏭️ Sprunget over (formalia)`);
       updates.push([
-        "Administrativt punkt (ingen politisk behandling)",
-        "Drift/formalia",
+        "Formalia/procedurepunkt",
+        "",
         "",
         "",
         1,
@@ -822,14 +822,19 @@ function analyzeNewRows_(sheet, startRow, numRows) {
     let contentForAnalysis = snippet;
     let pdfBase64 = null;
 
-    // Prøv først URL'en
-    if (urls.length > 0) {
-      const urlContent = fetchContentFromUrl_(urls[0]);
-      if (urlContent.success) {
-        if (urlContent.isPdf) {
-          pdfBase64 = urlContent.pdfBase64;
-        } else {
-          contentForAnalysis = urlContent.content || contentForAnalysis;
+    // For FirstAgenda-data: snippet indeholder allerede det fulde indhold (op til 2000 tegn)
+    // For email-data: prøv at hente indhold fra URL
+    if (from !== "FirstAgenda API" && urls.length > 0) {
+      // Spring bcdagsorden.dk URLs over (domænet er nedlagt)
+      const activeUrls = urls.filter(u => !u.includes("bcdagsorden.dk"));
+      if (activeUrls.length > 0) {
+        const urlContent = fetchContentFromUrl_(activeUrls[0]);
+        if (urlContent.success) {
+          if (urlContent.isPdf) {
+            pdfBase64 = urlContent.pdfBase64;
+          } else {
+            contentForAnalysis = urlContent.content || contentForAnalysis;
+          }
         }
       }
     }
@@ -915,12 +920,17 @@ OPGAVE: Analyser dokumentet og returner JSON i dette format:
   "programMatch": "Hvilke SF-mærkesager matcher dette? (velfærd/børn/klima/lighed)"
 }
 
-SCORING:
-1 = Rent administrativt (mødeplan, konstituering)
-2 = Driftsmæssigt (mindre justeringer, orientering)
-3 = Relevant (påvirker borgere, men ikke SF-kerneområde)
-4 = Vigtigt (SF-relevant: velfærd, børn, klima, lighed)
-5 = Topprioritet (stor politisk sag med SF-vinkel)
+SCORING — VIGTIGT: Scor baseret på INDHOLDET, ikke overskriften!
+En sag der hedder "orientering om nøgletal" kan sagtens score 4 hvis den indeholder konkrete tal om beskæftigelse, økonomi osv.
+
+1 = Ren formalia UDEN indhold (godkendelse af dagsorden, underskriftsark, mødeplan)
+2 = Generel orientering UDEN konkrete tal, beslutninger eller politisk substans
+3 = Sag med konkret indhold der påvirker borgere (regnskab, budget, anlæg, planer)
+4 = SF-relevant sag med konkrete fakta (velfærd, børn, klima, lighed, økonomi, normeringer)
+5 = Topprioritet — stor politisk sag med direkte SF-vinkel og konkrete konsekvenser
+
+HUSK: De fleste sager med konkrete tal, beløb eller beslutninger bør score MINDST 3.
+Sager om budget, regnskab, beskæftigelse, sundhed, børn, klima = score 4 eller 5.
 
 Returner KUN valid JSON, ingen anden tekst.
 `.trim();
