@@ -155,6 +155,66 @@ function testManualRun() {
   generateWeeklyDraft();
 }
 
+/**
+ * RE-ANALYSERER alle eksisterende rækker med den nye scoring-prompt.
+ * Kør denne ÉN gang efter du har opdateret koden, for at genberegne scores.
+ */
+function reanalyzeAllRows() {
+  console.log("🔄 Re-analyserer ALLE rækker med ny scoring-prompt...\n");
+
+  const props   = PropertiesService.getScriptProperties();
+  const apiKey  = mustGet_(props, CFG.P_API_KEY);
+  const ss      = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
+  const sheet   = ss.getSheetByName(props.getProperty(CFG.P_SHEET_NAME) || "Inbox");
+  const all     = sheet.getDataRange().getValues();
+
+  if (all.length < 2) {
+    console.log("ℹ️ Ingen data at re-analysere");
+    return;
+  }
+
+  let reanalyzed = 0;
+
+  for (let i = 1; i < all.length; i++) {
+    const row     = all[i];
+    const subject = row[3];  // D: Emne
+    const snippet = row[7];  // H: Snippet
+
+    // Spring rene formalia over
+    if (isAdministrativeSubject_(subject)) {
+      sheet.getRange(i + 1, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
+      continue;
+    }
+
+    console.log(`📋 [${i}/${all.length - 1}] ${subject}`);
+
+    try {
+      const analysis = analyzeWithGemini_(apiKey, {
+        subject: subject,
+        committee: row[2],
+        content: snippet,
+        pdfBase64: null
+      });
+
+      sheet.getRange(i + 1, 10, 1, 6).setValues([[
+        analysis.tldr         || "Kunne ikke analyseres",
+        analysis.sfAnalysis   || "",
+        analysis.facts        || "",
+        analysis.amounts      || "",
+        analysis.score        || 3,
+        analysis.programMatch || ""
+      ]]);
+
+      reanalyzed++;
+      Utilities.sleep(500);  // Rate limiting
+    } catch (e) {
+      console.log(`   ❌ Fejl: ${e.message}`);
+    }
+  }
+
+  console.log(`\n✅ Re-analyse færdig! ${reanalyzed} rækker opdateret.`);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    FIRSTAGENDA API — DIREKTE INDSAMLING FRA dagsordener.middelfart.dk
    ═══════════════════════════════════════════════════════════════════════ */
@@ -822,11 +882,13 @@ function analyzeNewRows_(sheet, startRow, numRows) {
     let contentForAnalysis = snippet;
     let pdfBase64 = null;
 
-    // For FirstAgenda-data: snippet indeholder allerede det fulde indhold (op til 2000 tegn)
-    // For email-data: prøv at hente indhold fra URL
+    // For FirstAgenda-data: snippet indeholder allerede det fulde indhold
+    // For email-data: prøv at hente indhold fra URL (men spring kendte dead-ends over)
     if (from !== "FirstAgenda API" && urls.length > 0) {
-      // Spring bcdagsorden.dk URLs over (domænet er nedlagt)
-      const activeUrls = urls.filter(u => !u.includes("bcdagsorden.dk"));
+      const activeUrls = urls.filter(u =>
+        !u.includes("bcdagsorden.dk") &&           // Nedlagt domæne
+        !u.includes("dagsordener.middelfart.dk")    // Giver altid 302, brug API i stedet
+      );
       if (activeUrls.length > 0) {
         const urlContent = fetchContentFromUrl_(activeUrls[0]);
         if (urlContent.success) {
