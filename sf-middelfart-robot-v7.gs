@@ -156,11 +156,13 @@ function testManualRun() {
 }
 
 /**
- * RE-ANALYSERER alle eksisterende rækker med den nye scoring-prompt.
- * Kør denne ÉN gang efter du har opdateret koden, for at genberegne scores.
+ * RE-ANALYSERER eksisterende rækker med den nye scoring-prompt.
+ * Gemmer progress, så den kan genoptages ved timeout (6 min grænse i GAS).
+ * Kør denne FLERE gange indtil den siger "Alle rækker er færdige".
  */
 function reanalyzeAllRows() {
-  console.log("🔄 Re-analyserer ALLE rækker med ny scoring-prompt...\n");
+  const MAX_RUNTIME_MS = 5 * 60 * 1000;  // Stop efter 5 min (sikkerhedsmargin)
+  const startTime = Date.now();
 
   const props   = PropertiesService.getScriptProperties();
   const apiKey  = mustGet_(props, CFG.P_API_KEY);
@@ -173,9 +175,30 @@ function reanalyzeAllRows() {
     return;
   }
 
-  let reanalyzed = 0;
+  // Genoptag fra sidst (0-indexed row i data-array, 1 = første datarække)
+  const startFrom = Number(props.getProperty("REANALYZE_PROGRESS") || 1);
+  const total     = all.length - 1;
 
-  for (let i = 1; i < all.length; i++) {
+  console.log(`🔄 Re-analyserer rækker ${startFrom}–${total} med ny scoring-prompt...\n`);
+
+  if (startFrom > total) {
+    console.log("✅ Alle rækker er allerede færdige! Nulstiller progress.");
+    props.deleteProperty("REANALYZE_PROGRESS");
+    return;
+  }
+
+  let reanalyzed = 0;
+  let lastProcessed = startFrom;
+
+  for (let i = startFrom; i < all.length; i++) {
+    // Tjek om vi nærmer os timeout
+    if (Date.now() - startTime > MAX_RUNTIME_MS) {
+      console.log(`\n⏱️ Timeout nærmer sig — gemmer progress ved række ${i}`);
+      props.setProperty("REANALYZE_PROGRESS", String(i));
+      console.log(`   Kør reanalyzeAllRows() igen for at fortsætte (${i - 1}/${total} færdige)`);
+      return;
+    }
+
     const row     = all[i];
     const subject = row[3];  // D: Emne
     const snippet = row[7];  // H: Snippet
@@ -183,10 +206,11 @@ function reanalyzeAllRows() {
     // Spring rene formalia over
     if (isAdministrativeSubject_(subject)) {
       sheet.getRange(i + 1, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
+      lastProcessed = i + 1;
       continue;
     }
 
-    console.log(`📋 [${i}/${all.length - 1}] ${subject}`);
+    console.log(`📋 [${i}/${total}] ${subject}`);
 
     try {
       const analysis = analyzeWithGemini_(apiKey, {
@@ -210,9 +234,14 @@ function reanalyzeAllRows() {
     } catch (e) {
       console.log(`   ❌ Fejl: ${e.message}`);
     }
+
+    lastProcessed = i + 1;
   }
 
-  console.log(`\n✅ Re-analyse færdig! ${reanalyzed} rækker opdateret.`);
+  // Alle rækker er færdige
+  props.deleteProperty("REANALYZE_PROGRESS");
+  console.log(`\n✅ Re-analyse FÆRDIG! ${reanalyzed} rækker opdateret (${total} total).`);
+  console.log("   Du kan nu køre generateWeeklyDraft() for at lave et nyt nyhedsbrev.");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
