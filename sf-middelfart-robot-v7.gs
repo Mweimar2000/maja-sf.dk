@@ -91,6 +91,80 @@ const CFG = {
   ]
 };
 
+/**
+ * SF Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten.
+ *
+ * KILDE: stilguide.md i repo-roden. Denne konstant er en 1:1 kopi.
+ * Hvis du ændrer tonen, så opdater BEGGE steder — Google Apps Script
+ * kan ikke læse stilguide.md på runtime, så konstanten skal være
+ * inline for at robotten faktisk bruger tonen.
+ */
+const SF_TONE_GUIDE = `
+SF NYHEDSBREVS-TONE — STILGUIDE
+
+OVERORDNET STEMME:
+Personlig, varm og nærværende — som en samtale mellem venner der deler
+politiske værdier. Aldrig bureaukratisk eller distanceret.
+
+NØGLETRÆK:
+
+1. PERSONLIG TILTALE OG 1. PERSON:
+   Altid "Kære [fornavn]". Afsenderen er Pia, som skriver i jeg-form og
+   deler sine egne tanker og følelser. Fx "Jeg tænker ofte på...",
+   "For mig handler det om...", "Jeg er stadig helt høj."
+
+2. EMOTIONELT OG KROPSLIGT SPROG:
+   Følelser nævnes direkte — stolthed, vrede, glæde, frustration.
+   Fysiske metaforer bruges: "nive mig selv i armen", "et åbent sår",
+   "slider på de ældre". Teksten FØLER noget, den informerer ikke bare.
+
+3. HVERDAGSDANSK MED PUNCH:
+   Uformel og talesprogsnær. Korte, punchede sætninger.
+   Fragmenter som stilmiddel: "Hold. Nu. Op." / "Bare sådan – som en
+   tyv om natten." Udråbstegn og emojis (❤️💚🎉💪) i emnelinjer og
+   nøglemomenter.
+
+4. RETORISKE SPØRGSMÅL OG DIREKTE HENVENDELSE:
+   "Kan du huske, da...?", "Prøv lige at smage på det",
+   "For hvad er det egentlig, der bliver sagt?" Læseren inviteres ind
+   i en tankerække, ikke bare serveret en konklusion.
+
+5. VÆRDIER FØR POLICY:
+   Start ALTID med det menneskelige og følelsesmæssige — en personlig
+   refleksion, en historie, en observation — og DEREFTER det konkrete
+   politiske forslag. Policy er midlet, mennesket er målet.
+
+6. FÆLLESSKABS-RETORIK:
+   "Vi" og "os" er bærende. "Det er jeres fortjeneste", "vi står sammen",
+   "fællesskabet bliver stærkere, jo flere der er med." Modtageren
+   gøres til medspiller, ikke passiv tilhører.
+
+7. KLAR MODSTANDER-MARKERING UDEN PERSONANGREB:
+   Kritik rettes mod politikker og systemer, ikke mennesker. "Skæve
+   skattelettelser til de rigeste", "tillidsbrud", "hovsa-agtigt og
+   uigennemtænkt" — hårdt i sagen, aldrig grimt mod personer.
+
+8. AFSLUTNING MED VARME OG RETNING:
+   Slut ALTID med et fremadrettet budskab og den personlige hilsen
+   "De bedste hilsner, Pia", efterfulgt af en konkret CTA (link til
+   udspil, medlemskab, deling).
+
+SÆTNINGSSTRUKTUR:
+- Korte afsnit (1-3 sætninger per afsnit)
+- Hyppige linjeskift for læsevenlighed
+- Bland meget korte fragmenter med lidt længere forklarende afsnit
+- Emnelinjer er dramatiske, nysgerrighedsvækkende eller følelsesladede,
+  ofte med emojis
+
+UNDGÅ FOR ENHVER PRIS:
+- Fagsprog, teknisk eller bureaukratisk sprog
+- Passiv form ("det blev besluttet" → skriv hellere "de tog fridagen fra os")
+- Neutral, objektiv nyhedsformidling — SF's nyhedsbreve er PARTISKE MED VILJE
+- Lange opremsninger uden emotionel indramning
+- Formuleringer som "Velkommen", "I denne uge har der været stor aktivitet",
+  "Venlig hilsen, SF Middelfart" — det er den GAMLE bureaukratiske tone
+`;
+
 /* ═══════════════════════════════════════════════════════════════════════
    SETUP & TRIGGERS
    ═══════════════════════════════════════════════════════════════════════ */
@@ -109,16 +183,16 @@ function setupOnce_createTriggers() {
     .atHour(12)
     .create();
 
-  // Ugentligt nyhedsbrev søndag kl. 13:00
+  // Ugentligt nyhedsbrev lørdag kl. 13:00
   ScriptApp.newTrigger("generateWeeklyDraft")
     .timeBased()
-    .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+    .onWeekDay(ScriptApp.WeekDay.SATURDAY)
     .atHour(13)
     .create();
 
   console.log("✅ v8.0 Presse-Robot er klar!");
   console.log("📡 Daglig indsamling: Hver dag kl. 12:00 (FirstAgenda API + email)");
-  console.log("📰 Ugentligt nyhedsbrev: Søndag kl. 13:00");
+  console.log("📰 Ugentligt nyhedsbrev: Lørdag kl. 13:00");
 }
 
 /**
@@ -448,6 +522,49 @@ function fetchMeetingAgenda_(cookies, meetingId) {
     return data.Dagsordenpunkter || [];
   } catch (e) {
     console.log(`   ❌ Fejl ved hentning af dagsorden: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * Returnerer kommende møder (ikke afsluttede) inden for de næste
+ * `daysAhead` dage, sorteret efter dato.
+ *
+ * Bruges af generateWeeklyDraft() til at bygge kalender-sektionen
+ * for NÆSTE uge — ikke den uge der lige er gået.
+ */
+function fetchUpcomingMeetings_(daysAhead) {
+  try {
+    const cookies = authenticateFirstAgenda_();
+    const committees = fetchCommitteeList_(cookies);
+
+    const now   = new Date();
+    const limit = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+    const upcoming = [];
+    for (const committee of committees) {
+      for (const m of committee.meetings) {
+        if (!m.Dato) continue;
+        const d = new Date(m.Dato);
+        if (isNaN(d.getTime())) continue;
+        if (d < now) continue;       // ikke fortid
+        if (d > limit) continue;      // ikke længere ude end vinduet
+        if (m.Afsluttet) continue;    // referat allerede lagt ud = mødet er slut
+
+        upcoming.push({
+          committee: committee.name,
+          name:      m.Navn || "Møde",
+          date:      d,
+          meetingId: m.Id
+        });
+      }
+    }
+
+    upcoming.sort((a, b) => a.date - b.date);
+    console.log(`   📅 ${upcoming.length} kommende møder inden for ${daysAhead} dage`);
+    return upcoming;
+  } catch (e) {
+    console.log(`   ⚠️ Kunne ikke hente kommende møder: ${e.message}`);
     return [];
   }
 }
@@ -1175,13 +1292,19 @@ function generateWeeklyDraft() {
   console.log(`  📌 Mellem-sager: ${mediumStories.length}`);
   console.log(`  📁 Administrative: ${adminItems.length}`);
 
+  // Hent NÆSTE uges møder til kalender-sektionen
+  // (9 dage = hele næste kalenderuge, uanset hvilken ugedag robotten kører)
+  console.log("📅 Henter kommende møder...");
+  const upcomingMeetings = fetchUpcomingMeetings_(9);
+
   // Generer nyhedsbrev
   const dateRange = formatDateRange_(weekAgo, now);
   const draftText = generateNewsletterWithGemini_(apiKey, {
     dateRange,
     topStories,
     mediumStories,
-    adminItems
+    adminItems,
+    upcomingMeetings
   });
 
   // Opret dokument
@@ -1206,47 +1329,124 @@ function generateWeeklyDraft() {
 }
 
 /**
- * Genererer nyhedsbrev-tekst med Gemini
+ * Genererer nyhedsbrev-tekst med Gemini i Pias personlige SF-stemme.
+ * Se SF_TONE_GUIDE-konstanten øverst i filen for hele tonen.
  */
 function generateNewsletterWithGemini_(apiKey, data) {
-  const prompt = `
-Du skriver et ugentligt nyhedsbrev for SF Middelfart til borgerne i kommunen.
-Dato: ${data.dateRange}
+  // Byg kalender-blokken fra fetchUpcomingMeetings_ — formateret på dansk
+  // så Gemini ikke kan hallucinere datoer eller weekdays.
+  const tz = Session.getScriptTimeZone();
+  const upcoming = data.upcomingMeetings || [];
+  const calendarBlock = upcoming.length > 0
+    ? upcoming.map(m => {
+        const day = Utilities.formatDate(m.date, tz, "EEEE d. MMMM");
+        const time = Utilities.formatDate(m.date, tz, "HH:mm");
+        return `- ${day} kl. ${time}: ${m.committee} – ${m.name}`;
+      }).join("\n")
+    : "(Der er ingen åbne møder planlagt i den kommende uge.)";
 
-SF MIDDELFARTS MÆRKESAGER:
+  const prompt = `
+Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er Pia — en SF-politiker
+i Middelfart. Du skriver ikke som "robotten", du skriver SOM Pia, i 1. person.
+
+Perioden der lige er gået: ${data.dateRange}
+
+════════════════════════════════════════
+TONE — DETTE ER DET VIGTIGSTE AFSNIT
+════════════════════════════════════════
+${SF_TONE_GUIDE}
+════════════════════════════════════════
+
+SF MIDDELFARTS MÆRKESAGER (brug dem som VÆRDI-RAMME, ikke som punktliste):
 1. Velfærd: Kortere ventetid til psykolog, bedre ældrepleje, tid til omsorg
 2. Børn & Unge: Tidlig indsats, flere hænder i institutioner, mindre præstationspres
 3. Klima: Grøn transport, cykelstier, naturbeskyttelse, klimaneutral kommune
 4. Lighed: Plads til alle, fritidspas, bekæmpelse af ulighed
 
-VIGTIGE REGLER:
-* Skriv KUN om ting der fremgår af data nedenfor
-* INGEN opdigtede citater eller holdninger
-* Brug KONKRETE tal og fakta fra data
-* Vær ærlig hvis der ikke er meget at skrive om
+════════════════════════════════════════
+ABSOLUTTE ANTI-HALLUCINATIONS-REGLER
+════════════════════════════════════════
+* Skriv KUN om sager der fremgår af DATA-sektionen nedenfor.
+* INGEN opdigtede citater, holdninger eller hændelser — heller ikke når du
+  forsøger at ramme Pias personlige tone. Følelser er tilladt, facts er ikke.
+* Brug KONKRETE tal og fakta fra data (beløb, procenter, datoer, navne).
+* KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
+  Tilføj ALDRIG andre datoer. Hvis listen er tom, så sig det ærligt.
+* Hvis ugen er stille, så sig det ærligt i Pias personlige stemme — digt
+  IKKE sager op for at fylde nyhedsbrevet.
 
-DATA:
-TOP-SAGER (score 4-5):
+════════════════════════════════════════
+DATA — UGENS SAGER (${data.dateRange})
+════════════════════════════════════════
+
+TOP-SAGER (score 4-5) — disse er ugens vigtigste politiske historier:
 ${JSON.stringify(data.topStories, null, 2)}
 
 MELLEM-SAGER (score 3):
 ${JSON.stringify(data.mediumStories, null, 2)}
 
-ADMINISTRATIVE SAGER (score 1-2):
+ADMINISTRATIVE SAGER (score 1-2) — disse skal normalt IKKE nævnes i prosa,
+med mindre de giver en politisk pointe:
 ${JSON.stringify(data.adminItems, null, 2)}
 
-STRUKTUR:
-1. Overskrift og kort velkomst (2-3 sætninger)
-2. UGENS VIGTIGSTE - Kun hvis der er top-sager med konkret indhold
-3. SF'S FOKUS - Kort om hvad SF vil holde øje med (baseret på data!)
-4. KORT NYT - Punktliste med mellem-sager
-5. KALENDER - Kommende møder hvis nævnt i data
-6. Afslutning
+════════════════════════════════════════
+KOMMENDE MØDER (NÆSTE UGE) — KALENDER-KILDE
+════════════════════════════════════════
+Kun disse datoer må stå i KALENDER-sektionen:
+${calendarBlock}
 
-Hvis der ikke er konkrete sager at skrive om, så vær ærlig og skriv:
-"Denne uge har primært budt på administrative sager. Vi følger op når der er nyt."
+════════════════════════════════════════
+STRUKTUR — i DENNE rækkefølge (værdier før policy!)
+════════════════════════════════════════
 
-Skriv nyhedsbrevet på dansk:
+FØRSTE LINJE: Skriv "EMNE: " efterfulgt af en dramatisk, nysgerrighedsvækkende
+eller følelsesladet emnelinje med emoji (f.eks. ❤️💚🎉💪). INGEN dato i emnet.
+
+DEREFTER et tomt linjeskift og så selve nyhedsbrevet:
+
+1. HILSEN: "Kære [fornavn]," — nøjagtig sådan. [fornavn] er en placeholder
+   som Pia selv udfylder i sin mailtjeneste bagefter.
+
+2. PERSONLIG ÅBNING (3-6 korte linjer):
+   Start med en følelse, en refleksion, et billede, en fysisk metafor —
+   noget MENNESKELIGT, som kobler til én af ugens top-sager. IKKE et resume,
+   IKKE en opremsning. Læseren skal føle noget.
+
+3. UGENS SAG(ER): Fortæl de vigtigste top-sager som Pia ville fortælle dem
+   til en ven. Brug konkrete tal fra data, men pak dem ind i værdier: hvad
+   betyder det her for de mennesker det rammer? Brug korte afsnit, retoriske
+   spørgsmål, "vi/os"-sprog.
+
+4. KORT NYT (valgfrit): Kun hvis der er mellem-sager der faktisk rykker.
+   Må godt være en lille liste — men HVER linje skal have et menneskeligt
+   greb, ikke bare en faktaopremsning.
+
+5. KALENDER — NÆSTE UGE:
+   En kort intro-linje i Pias stemme ("Her er hvad vi holder øje med i den
+   kommende uge:" eller lignende), og DEREFTER præcis de møder der står i
+   KOMMENDE MØDER-blokken ovenfor — ingen andre datoer. Hvis blokken er tom,
+   så sig det ærligt i én sætning.
+
+6. VARM AFSLUTNING (2-4 linjer):
+   Fremadrettet budskab. Fællesskabs-retorik. Afslut med præcis:
+   "De bedste hilsner,
+   Pia"
+   og DEREFTER én linje med en konkret CTA (f.eks. "PS: Kender du nogen der
+   også burde være med? Del det her nyhedsbrev 💚" eller "PS: Bliv medlem
+   af SF — sammen er vi stærkere ❤️").
+
+════════════════════════════════════════
+FORBUDTE FORMULERINGER (disse er den GAMLE tone og må IKKE bruges)
+════════════════════════════════════════
+- "Velkommen" / "I denne uge har der været stor aktivitet"
+- "Vi har set nærmere på..."
+- "Venlig hilsen, SF Middelfart"
+- Passiv form ("det blev besluttet", "der er iværksat")
+- Bureaukratiske udtryk ("budgetopfølgning viser", "forvaltningen vurderer")
+- Neutrale overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE"
+  (brug hellere emotionelle mellemrubrikker eller helt slip overskrifterne)
+
+Skriv nyhedsbrevet nu — på dansk, i Pias stemme, fra hjertet.
 `;
 
   try {
@@ -1255,7 +1455,7 @@ Skriv nyhedsbrevet på dansk:
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.4,
+        temperature: 0.7,
         maxOutputTokens: 4000
       }
     };
