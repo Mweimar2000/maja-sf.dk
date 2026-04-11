@@ -1,9 +1,19 @@
 # SF Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten
 
-Dette er kilden til den tone som SF Middelfarts nyhedsbrevsrobot skal skrive i.
-Robotten har en kopi af denne tekst embedded som `SF_TONE_GUIDE`-konstant
-i `sf-middelfart-robot-v7.gs`. **Hvis du ændrer tonen, skal begge steder
-opdateres** — ellers får robotten ikke den nye tone.
+Dette er den **levende** kilde til den tone som SF Middelfarts nyhedsbrevsrobot
+skriver i. Robotten henter denne fil direkte fra GitHub (`raw.githubusercontent.com`)
+hver gang den genererer et nyhedsbrev, via `loadToneGuide_()` i
+`sf-middelfart-robot-v7.gs`.
+
+**Sådan redigerer du tonen:**
+1. Rediger denne fil (`stilguide.md`)
+2. Commit og push til `main` på GitHub
+3. Næste gang robotten kører (eller efter max 1 time pga. cache), bruger
+   den den nye tone — ingen ændring af robot-koden nødvendig.
+
+`sf-middelfart-robot-v7.gs` har også en `SF_TONE_GUIDE_FALLBACK`-konstant
+med samme indhold, som kun bruges hvis GitHub ikke kan nås. Den behøver
+du normalt ikke røre ved.
 
 ---
 

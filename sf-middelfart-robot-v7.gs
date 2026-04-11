@@ -54,6 +54,13 @@ const CFG = {
   // Model konfiguration
   MODEL_NAME: "gemini-3-flash-preview",
 
+  // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
+  // den genererer et nyhedsbrev, så Pia kun behøver at redigere stilguide.md
+  // og pushe til GitHub — så bruger robotten den nye tone næste gang.
+  // Hvis fetch fejler, falder robotten tilbage til
+  // SF_TONE_GUIDE_FALLBACK-konstanten som er embedded nedenfor.
+  STILGUIDE_RAW_URL: "https://raw.githubusercontent.com/Mweimar2000/maja-sf.dk/main/stilguide.md",
+
   // Behandlingsgrænser
   MAX_THREADS_PER_RUN:    30,
   MAX_URLS_PER_MESSAGE:   5,
@@ -92,14 +99,17 @@ const CFG = {
 };
 
 /**
- * SF Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten.
+ * SF Nyhedsbrevs-tone — FALLBACK.
  *
- * KILDE: stilguide.md i repo-roden. Denne konstant er en 1:1 kopi.
- * Hvis du ændrer tonen, så opdater BEGGE steder — Google Apps Script
- * kan ikke læse stilguide.md på runtime, så konstanten skal være
- * inline for at robotten faktisk bruger tonen.
+ * Robotten forsøger først at hente den LEVENDE stilguide direkte fra
+ * GitHub via loadToneGuide_() (se CFG.STILGUIDE_RAW_URL). Denne konstant
+ * bruges KUN hvis fetchet fejler (netværk nede, GitHub nede, URL ændret).
+ *
+ * Du kan derfor redigere stilguide.md i repo-roden og pushe — robotten
+ * læser den nye version næste gang den kører. Du behøver ikke længere
+ * holde denne konstant i sync; den er en nødudgang.
  */
-const SF_TONE_GUIDE = `
+const SF_TONE_GUIDE_FALLBACK = `
 SF NYHEDSBREVS-TONE — STILGUIDE
 
 OVERORDNET STEMME:
@@ -164,6 +174,52 @@ UNDGÅ FOR ENHVER PRIS:
 - Formuleringer som "Velkommen", "I denne uge har der været stor aktivitet",
   "Venlig hilsen, SF Middelfart" — det er den GAMLE bureaukratiske tone
 `;
+
+/**
+ * Henter den LEVENDE stilguide fra GitHub (CFG.STILGUIDE_RAW_URL).
+ * Falder tilbage til SF_TONE_GUIDE_FALLBACK hvis fetchet fejler.
+ *
+ * Resultatet caches i 1 time i Script Cache, så vi ikke rammer GitHub
+ * flere gange per run (og så nyhedsbrev-generering bliver hurtigere
+ * hvis noget kalder den gentagne gange).
+ */
+function loadToneGuide_() {
+  const CACHE_KEY = "sf_tone_guide_v1";
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(CACHE_KEY);
+  if (cached) {
+    console.log("   📖 Bruger cached stilguide");
+    return cached;
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(CFG.STILGUIDE_RAW_URL, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'SF-Middelfart-Bot/8.0',
+        'Accept': 'text/plain, text/markdown, */*'
+      }
+    });
+
+    if (response.getResponseCode() === 200) {
+      const text = response.getContentText();
+      if (text && text.length > 200) {  // sanity check: en rigtig stilguide er lang
+        cache.put(CACHE_KEY, text, 3600);  // cache i 1 time
+        console.log(`   📖 Stilguide hentet live fra GitHub (${text.length} tegn)`);
+        return text;
+      }
+      console.log(`   ⚠️ Stilguide fra GitHub er mistænkeligt kort (${text.length} tegn) — bruger fallback`);
+    } else {
+      console.log(`   ⚠️ Kunne ikke hente stilguide: HTTP ${response.getResponseCode()} — bruger fallback`);
+    }
+  } catch (e) {
+    console.log(`   ⚠️ Fejl ved hentning af stilguide: ${e.message} — bruger fallback`);
+  }
+
+  return SF_TONE_GUIDE_FALLBACK;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    SETUP & TRIGGERS
@@ -1330,7 +1386,8 @@ function generateWeeklyDraft() {
 
 /**
  * Genererer nyhedsbrev-tekst med Gemini i Pias personlige SF-stemme.
- * Se SF_TONE_GUIDE-konstanten øverst i filen for hele tonen.
+ * Tonen hentes live fra stilguide.md via loadToneGuide_() — med
+ * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
 function generateNewsletterWithGemini_(apiKey, data) {
   // Byg kalender-blokken fra fetchUpcomingMeetings_ — formateret på dansk
@@ -1345,6 +1402,9 @@ function generateNewsletterWithGemini_(apiKey, data) {
       }).join("\n")
     : "(Der er ingen åbne møder planlagt i den kommende uge.)";
 
+  // Hent den aktuelle stilguide (live fra GitHub, ellers fallback-konstant)
+  const toneGuide = loadToneGuide_();
+
   const prompt = `
 Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er Pia — en SF-politiker
 i Middelfart. Du skriver ikke som "robotten", du skriver SOM Pia, i 1. person.
@@ -1354,7 +1414,7 @@ Perioden der lige er gået: ${data.dateRange}
 ════════════════════════════════════════
 TONE — DETTE ER DET VIGTIGSTE AFSNIT
 ════════════════════════════════════════
-${SF_TONE_GUIDE}
+${toneGuide}
 ════════════════════════════════════════
 
 SF MIDDELFARTS MÆRKESAGER (brug dem som VÆRDI-RAMME, ikke som punktliste):
