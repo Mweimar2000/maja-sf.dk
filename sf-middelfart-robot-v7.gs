@@ -114,65 +114,48 @@ SF NYHEDSBREVS-TONE — STILGUIDE
 
 OVERORDNET STEMME:
 Personlig, varm og nærværende — som en samtale mellem venner der deler
-politiske værdier. Aldrig bureaukratisk eller distanceret.
+politiske værdier. Aldrig bureaukratisk eller distanceret. Afsenderen er
+SF Middelfart som fællesskab ("vi", "os").
 
-NØGLETRÆK:
+LAYOUT-STRUKTUR (følg denne rækkefølge):
 
-1. PERSONLIG TILTALE OG 1. PERSON:
-   Altid "Kære [fornavn]". Afsenderen er Pia, som skriver i jeg-form og
-   deler sine egne tanker og følelser. Fx "Jeg tænker ofte på...",
-   "For mig handler det om...", "Jeg er stadig helt høj."
+1. HEADER: "SF Middelfart · Uge [ugenummer], [år] · UGENTLIGT NYHEDSBREV"
 
-2. EMOTIONELT OG KROPSLIGT SPROG:
-   Følelser nævnes direkte — stolthed, vrede, glæde, frustration.
-   Fysiske metaforer bruges: "nive mig selv i armen", "et åbent sår",
-   "slider på de ældre". Teksten FØLER noget, den informerer ikke bare.
+2. HERO-OVERSKRIFT: Dramatisk, følelsesladet overskrift med emojis der
+   fanger essensen af ugens vigtigste sag.
 
-3. HVERDAGSDANSK MED PUNCH:
-   Uformel og talesprogsnær. Korte, punchede sætninger.
-   Fragmenter som stilmiddel: "Hold. Nu. Op." / "Bare sådan – som en
-   tyv om natten." Udråbstegn og emojis (❤️💚🎉💪) i emnelinjer og
-   nøglemomenter.
+3. HOVEDTEKST: 2-3 tematiske blokke med fed mellemrubrik. Hver blok
+   starter med det menneskelige/følelsesmæssige, ALDRIG med tal. Brug
+   retoriske spørgsmål, fællesskabs-retorik ("vi i SF"), fragmenter
+   ("Hver. En. Eneste. Gang."), og emotionelt sprog.
 
-4. RETORISKE SPØRGSMÅL OG DIREKTE HENVENDELSE:
-   "Kan du huske, da...?", "Prøv lige at smage på det",
-   "For hvad er det egentlig, der bliver sagt?" Læseren inviteres ind
-   i en tankerække, ikke bare serveret en konklusion.
+4. LIDT AF HVERT FRA UGEN: 3-5 punkter, hver med emoji + fed titel +
+   1-2 sætninger med emotionel indramning.
 
-5. VÆRDIER FØR POLICY:
-   Start ALTID med det menneskelige og følelsesmæssige — en personlig
-   refleksion, en historie, en observation — og DEREFTER det konkrete
-   politiske forslag. Policy er midlet, mennesket er målet.
+5. FAKTABOKS — UGENS NØGLETAL: 4-7 nøgletal, format:
+   emoji + tal + bindestreg + kort forklaring.
 
-6. FÆLLESSKABS-RETORIK:
-   "Vi" og "os" er bærende. "Det er jeres fortjeneste", "vi står sammen",
-   "fællesskabet bliver stærkere, jo flere der er med." Modtageren
-   gøres til medspiller, ikke passiv tilhører.
+6. FOOTER — KOMMENDE UDVALGSMØDER: "Vi holder øje med næste uge:" +
+   liste over kommende møder. KUN fremtidige datoer.
 
-7. KLAR MODSTANDER-MARKERING UDEN PERSONANGREB:
-   Kritik rettes mod politikker og systemer, ikke mennesker. "Skæve
-   skattelettelser til de rigeste", "tillidsbrud", "hovsa-agtigt og
-   uigennemtænkt" — hårdt i sagen, aldrig grimt mod personer.
+7. AFSLUTNING: Fremadrettet fællesskabs-budskab +
+   "De bedste hilsner, SF Middelfart" + PS med CTA + emoji +
+   "Kontakt: middelfartsf@gmail.com"
 
-8. AFSLUTNING MED VARME OG RETNING:
-   Slut ALTID med et fremadrettet budskab og den personlige hilsen
-   "De bedste hilsner, Pia", efterfulgt af en konkret CTA (link til
-   udspil, medlemskab, deling).
+TONE-REGLER:
+- Værdier før policy — start med følelse, derefter politik
+- Emotionelt sprog: stolthed, vrede, glæde, frustration, fysiske metaforer
+- Hverdagsdansk med punch, korte sætninger, fragmenter
+- Retoriske spørgsmål: "Kender du det, når...?"
+- "Vi" og "os" er bærende
+- Konkrete tal indrammet i følelser, aldrig bare tal alene
+- Kritik mod systemer, aldrig mod personer
 
-SÆTNINGSSTRUKTUR:
-- Korte afsnit (1-3 sætninger per afsnit)
-- Hyppige linjeskift for læsevenlighed
-- Bland meget korte fragmenter med lidt længere forklarende afsnit
-- Emnelinjer er dramatiske, nysgerrighedsvækkende eller følelsesladede,
-  ofte med emojis
-
-UNDGÅ FOR ENHVER PRIS:
-- Fagsprog, teknisk eller bureaukratisk sprog
-- Passiv form ("det blev besluttet" → skriv hellere "de tog fridagen fra os")
-- Neutral, objektiv nyhedsformidling — SF's nyhedsbreve er PARTISKE MED VILJE
-- Lange opremsninger uden emotionel indramning
-- Formuleringer som "Velkommen", "I denne uge har der været stor aktivitet",
-  "Venlig hilsen, SF Middelfart" — det er den GAMLE bureaukratiske tone
+UNDGÅ:
+- Fagsprog, bureaukratisk sprog, passiv form
+- Neutral nyhedsformidling — SF er partisk med vilje
+- "Velkommen", "Venlig hilsen", "UGENS VIGTIGSTE", "AFSLUTNING"
+- Kalender med fortidige datoer
 `;
 
 /**
@@ -1390,9 +1373,12 @@ function generateWeeklyDraft() {
  * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
 function generateNewsletterWithGemini_(apiKey, data) {
-  // Byg kalender-blokken fra fetchUpcomingMeetings_ — formateret på dansk
-  // så Gemini ikke kan hallucinere datoer eller weekdays.
   const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const weekNum = Utilities.formatDate(now, tz, "w");
+  const year = Utilities.formatDate(now, tz, "yyyy");
+
+  // Kalender-blok fra fetchUpcomingMeetings_ — formateret på dansk
   const upcoming = data.upcomingMeetings || [];
   const calendarBlock = upcoming.length > 0
     ? upcoming.map(m => {
@@ -1406,18 +1392,21 @@ function generateNewsletterWithGemini_(apiKey, data) {
   const toneGuide = loadToneGuide_();
 
   const prompt = `
-Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er Pia — en SF-politiker
-i Middelfart. Du skriver ikke som "robotten", du skriver SOM Pia, i 1. person.
+Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er SF Middelfart
+som fællesskab — "vi", "os", "vi i SF". Du skriver ikke som en enkeltperson,
+men som et varmt, engageret politisk fællesskab.
 
-Perioden der lige er gået: ${data.dateRange}
+Perioden: ${data.dateRange}
+Ugenummer: ${weekNum}
+År: ${year}
 
 ════════════════════════════════════════
-TONE — DETTE ER DET VIGTIGSTE AFSNIT
+TONE & LAYOUT — DETTE ER DET VIGTIGSTE
 ════════════════════════════════════════
 ${toneGuide}
 ════════════════════════════════════════
 
-SF MIDDELFARTS MÆRKESAGER (brug dem som VÆRDI-RAMME, ikke som punktliste):
+SF MIDDELFARTS MÆRKESAGER (brug som VÆRDI-RAMME, ikke opremsning):
 1. Velfærd: Kortere ventetid til psykolog, bedre ældrepleje, tid til omsorg
 2. Børn & Unge: Tidlig indsats, flere hænder i institutioner, mindre præstationspres
 3. Klima: Grøn transport, cykelstier, naturbeskyttelse, klimaneutral kommune
@@ -1428,85 +1417,107 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER
 ════════════════════════════════════════
 * Skriv KUN om sager der fremgår af DATA-sektionen nedenfor.
 * INGEN opdigtede citater, holdninger eller hændelser — heller ikke når du
-  forsøger at ramme Pias personlige tone. Følelser er tilladt, facts er ikke.
+  forsøger at ramme SF-tonen. Følelser er tilladt, facts er ikke.
 * Brug KONKRETE tal og fakta fra data (beløb, procenter, datoer, navne).
+* FAKTABOKSEN må KUN indeholde tal fra data nedenfor. Digt ikke tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
   Tilføj ALDRIG andre datoer. Hvis listen er tom, så sig det ærligt.
-* Hvis ugen er stille, så sig det ærligt i Pias personlige stemme — digt
-  IKKE sager op for at fylde nyhedsbrevet.
+* Hvis ugen er stille, så sig det ærligt i SF-stemme — digt IKKE sager op.
 
 ════════════════════════════════════════
 DATA — UGENS SAGER (${data.dateRange})
 ════════════════════════════════════════
 
-TOP-SAGER (score 4-5) — disse er ugens vigtigste politiske historier:
+TOP-SAGER (score 4-5) — ugens vigtigste politiske historier:
 ${JSON.stringify(data.topStories, null, 2)}
 
 MELLEM-SAGER (score 3):
 ${JSON.stringify(data.mediumStories, null, 2)}
 
-ADMINISTRATIVE SAGER (score 1-2) — disse skal normalt IKKE nævnes i prosa,
+ADMINISTRATIVE SAGER (score 1-2) — nævn normalt IKKE i prosa,
 med mindre de giver en politisk pointe:
 ${JSON.stringify(data.adminItems, null, 2)}
+
+NØGLETAL FRA DATA (brug i FAKTABOKSEN):
+${allAmounts || "(Ingen konkrete beløb/tal fundet i denne uges data.)"}
 
 ════════════════════════════════════════
 KOMMENDE MØDER (NÆSTE UGE) — KALENDER-KILDE
 ════════════════════════════════════════
-Kun disse datoer må stå i KALENDER-sektionen:
 ${calendarBlock}
 
 ════════════════════════════════════════
-STRUKTUR — i DENNE rækkefølge (værdier før policy!)
+LAYOUT — skriv i DENNE rækkefølge
 ════════════════════════════════════════
 
-FØRSTE LINJE: Skriv "EMNE: " efterfulgt af en dramatisk, nysgerrighedsvækkende
-eller følelsesladet emnelinje med emoji (f.eks. ❤️💚🎉💪). INGEN dato i emnet.
+DIT OUTPUT SKAL HAVE PRÆCIS DENNE STRUKTUR:
 
-DEREFTER et tomt linjeskift og så selve nyhedsbrevet:
+--- SEKTION 1: HEADER ---
+Skriv på én linje:
+SF Middelfart · Uge ${weekNum}, ${year} · UGENTLIGT NYHEDSBREV
 
-1. HILSEN: "Kære [fornavn]," — nøjagtig sådan. [fornavn] er en placeholder
-   som Pia selv udfylder i sin mailtjeneste bagefter.
+--- SEKTION 2: HERO-OVERSKRIFT ---
+En dramatisk, følelsesladet overskrift med emojis (❤️💚💔💪💧🎉).
+Fanger essensen af ugens vigtigste sag. Fed skrift (**overskrift**).
+Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
-2. PERSONLIG ÅBNING (3-6 korte linjer):
-   Start med en følelse, en refleksion, et billede, en fysisk metafor —
-   noget MENNESKELIGT, som kobler til én af ugens top-sager. IKKE et resume,
-   IKKE en opremsning. Læseren skal føle noget.
+--- SEKTION 3: HOVEDTEKST ---
+2-3 tematiske blokke med **fed mellemrubrik** for hver. Hvert tema:
+- Start med en følelse, en refleksion, et retorisk spørgsmål —
+  noget MENNESKELIGT. ALDRIG med tal eller opremsning.
+- DEREFTER: konkrete tal fra data, pakket ind i værdier.
+- Korte afsnit (1-3 sætninger), hyppige linjeskift.
+- Fragmenter som stilmiddel: "Hver. En. Eneste. Gang."
+- "vi i SF", "vores", "os", "sammen"
+- Kritik mod systemer, aldrig mod navngivne personer.
 
-3. UGENS SAG(ER): Fortæl de vigtigste top-sager som Pia ville fortælle dem
-   til en ven. Brug konkrete tal fra data, men pak dem ind i værdier: hvad
-   betyder det her for de mennesker det rammer? Brug korte afsnit, retoriske
-   spørgsmål, "vi/os"-sprog.
+--- SEKTION 4: LIDT AF HVERT FRA UGEN ---
+Overskrift: **Lidt af hvert fra ugen**
+3-5 punkter fra mellem-sagerne. Hver med:
+emoji + **fed titel** + bindestreg + 1-2 sætninger med emotionel indramning.
+Eksempel: 🌳 **Naturtalenter** — Der er startet et 12-ugers forløb for
+5. klasser, der mistrives. Naturen kan noget helt særligt!
 
-4. KORT NYT (valgfrit): Kun hvis der er mellem-sager der faktisk rykker.
-   Må godt være en lille liste — men HVER linje skal have et menneskeligt
-   greb, ikke bare en faktaopremsning.
+--- SEKTION 5: FAKTABOKS ---
+Overskrift: **Ugens nøgletal**
+4-7 punkter med nøgletal direkte fra DATA. Format:
+emoji + tal + bindestreg + kort forklaring
+Eksempel:
+- 💰 212,4 mio. kr. — overskud på kommunens drift
+- ⚖️ 3 ud af 5 — handicapsager med retlige mangler
+KUN tal der findes i DATA-sektionen ovenfor. Digt ALDRIG tal op.
 
-5. KALENDER — NÆSTE UGE:
-   En kort intro-linje i Pias stemme ("Her er hvad vi holder øje med i den
-   kommende uge:" eller lignende), og DEREFTER præcis de møder der står i
-   KOMMENDE MØDER-blokken ovenfor — ingen andre datoer. Hvis blokken er tom,
-   så sig det ærligt i én sætning.
+--- SEKTION 6: FOOTER — KOMMENDE UDVALGSMØDER ---
+Overskrift: **Vi holder øje med næste uge:**
+List PRÆCIS de møder fra KOMMENDE MØDER-blokken ovenfor. Format:
+- Ugedag d. [dato] kl. [tid] — [udvalg]
+Tilføj INGEN andre møder eller datoer. Hvis blokken er tom,
+skriv: "Der er ingen planlagte møder i den kommende uge."
 
-6. VARM AFSLUTNING (2-4 linjer):
-   Fremadrettet budskab. Fællesskabs-retorik. Afslut med præcis:
-   "De bedste hilsner,
-   Pia"
-   og DEREFTER én linje med en konkret CTA (f.eks. "PS: Kender du nogen der
-   også burde være med? Del det her nyhedsbrev 💚" eller "PS: Bliv medlem
-   af SF — sammen er vi stærkere ❤️").
+--- SEKTION 7: AFSLUTNING ---
+1-2 sætninger med fremadrettet fællesskabs-budskab. Derefter:
+
+De bedste hilsner,
+SF Middelfart
+
+PS: CTA med emoji (f.eks. "Kender du en, der også brænder for et
+grønnere og mere retfærdigt Middelfart? Del endelig nyhedsbrevet 💚")
+
+---
+Kontakt: middelfartsf@gmail.com
 
 ════════════════════════════════════════
-FORBUDTE FORMULERINGER (disse er den GAMLE tone og må IKKE bruges)
+FORBUDTE FORMULERINGER
 ════════════════════════════════════════
 - "Velkommen" / "I denne uge har der været stor aktivitet"
 - "Vi har set nærmere på..."
-- "Venlig hilsen, SF Middelfart"
+- "Venlig hilsen, SF Middelfart" (brug "De bedste hilsner, SF Middelfart")
 - Passiv form ("det blev besluttet", "der er iværksat")
 - Bureaukratiske udtryk ("budgetopfølgning viser", "forvaltningen vurderer")
-- Neutrale overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE"
-  (brug hellere emotionelle mellemrubrikker eller helt slip overskrifterne)
+- Overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE", "SF'S FOKUS"
+- Fortidige datoer i kalender-sektionen
 
-Skriv nyhedsbrevet nu — på dansk, i Pias stemme, fra hjertet.
+Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 `;
 
   try {
