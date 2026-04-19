@@ -112,10 +112,20 @@ const CFG = {
 const SF_TONE_GUIDE_FALLBACK = `
 SF NYHEDSBREVS-TONE — STILGUIDE
 
+AFSENDER: SF Middelfart (aldrig en enkeltperson).
+Underskrift: "De bedste hilsner, SF Middelfart"
+
 OVERORDNET STEMME:
-Personlig, varm og nærværende — som en samtale mellem venner der deler
-politiske værdier. Aldrig bureaukratisk eller distanceret. Afsenderen er
-SF Middelfart som fællesskab ("vi", "os").
+Varm, nærværende og fællesskabsorienteret. Polished og velformuleret,
+men med menneskelig kant. Aldrig bureaukratisk eller distanceret.
+
+GRUNDREGLER:
+- Vi-form, ALDRIG jeg-form. Altid "vi i SF Middelfart", "os", "vi mener".
+- INGEN "Kære [fornavn]" eller anden personlig tiltale — nyhedsbrevet
+  distribueres bredt, ikke som personlig post. Brug "du"/"dig" direkte:
+  "Kender du det, når...", "Prøv lige at smage på det her",
+  "Tak fordi du læser med".
+- Afsenderen er partiet som kollektiv — ikke én person.
 
 LAYOUT-STRUKTUR (følg denne rækkefølge):
 
@@ -1509,8 +1519,11 @@ Kontakt: middelfartsf@gmail.com
 ════════════════════════════════════════
 FORBUDTE FORMULERINGER
 ════════════════════════════════════════
+- "Kære [fornavn]" eller enhver anden personlig tiltale/hilsen
 - "Velkommen" / "I denne uge har der været stor aktivitet"
 - "Vi har set nærmere på..."
+- Jeg-form ("jeg", "mig", "min") — brug altid "vi/os i SF Middelfart"
+- Underskrift med enkeltpersons navn — kun "SF Middelfart"
 - "Venlig hilsen, SF Middelfart" (brug "De bedste hilsner, SF Middelfart")
 - Passiv form ("det blev besluttet", "der er iværksat")
 - Bureaukratiske udtryk ("budgetopfølgning viser", "forvaltningen vurderer")
