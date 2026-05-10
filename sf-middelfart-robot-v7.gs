@@ -636,6 +636,81 @@ function extractContentFromAgendaItem_(item) {
   return parts.join("\n\n");
 }
 
+/**
+ * Genhenter kildetekst fra dagsordener.middelfart.dk for de stories
+ * der blev brugt i nyhedsbrevet, så vi kan fakta-tjekke imod.
+ *
+ * FirstAgenda-rækker: genhentes via API (frisk fra kilden).
+ * Gmail-rækker: bruger sheetets snippet som fallback, flagget som "gmail".
+ */
+function collectGroundTruth_(stories) {
+  const groundTruth = [];
+  const meetingMap  = {};
+
+  for (const story of stories) {
+    if (story.source !== "FirstAgenda API" || !story.sourceId) {
+      groundTruth.push({
+        committee:  story.committee,
+        subject:    story.subject,
+        sourceUrl:  story.sourceUrl || "",
+        sourceType: "gmail",
+        freshText:  story.snippet || story.tldr || ""
+      });
+      continue;
+    }
+
+    const parts = String(story.sourceId).split(":");
+    if (parts.length >= 2) {
+      const meetingId = parts[1];
+      if (!meetingMap[meetingId]) meetingMap[meetingId] = [];
+      meetingMap[meetingId].push(story);
+    }
+  }
+
+  if (Object.keys(meetingMap).length > 0) {
+    try {
+      const cookies = authenticateFirstAgenda_();
+
+      for (const [meetingId, meetingStories] of Object.entries(meetingMap)) {
+        console.log(`   🔄 Genhenter møde ${meetingId} fra FirstAgenda...`);
+        const agendaItems = fetchMeetingAgenda_(cookies, meetingId);
+
+        for (const story of meetingStories) {
+          const itemId = String(story.sourceId).split(":")[2];
+          const match  = agendaItems.find(a => String(a.Id) === itemId);
+          const fresh  = match
+            ? extractContentFromAgendaItem_(match)
+            : (story.snippet || story.tldr || "");
+
+          groundTruth.push({
+            committee:  story.committee,
+            subject:    story.subject,
+            sourceUrl:  story.sourceUrl || "",
+            sourceType: match ? "firstagenda" : "firstagenda-cached",
+            freshText:  fresh.slice(0, 5000)
+          });
+        }
+      }
+    } catch (e) {
+      console.log(`   ⚠️ Kunne ikke genhente fra FirstAgenda: ${e.message} — bruger cached snippets`);
+      for (const meetingStories of Object.values(meetingMap)) {
+        for (const story of meetingStories) {
+          groundTruth.push({
+            committee:  story.committee,
+            subject:    story.subject,
+            sourceUrl:  story.sourceUrl || "",
+            sourceType: "firstagenda-cached",
+            freshText:  story.snippet || story.tldr || ""
+          });
+        }
+      }
+    }
+  }
+
+  console.log(`   📚 Ground truth: ${groundTruth.length} kilder (${groundTruth.filter(g => g.sourceType === "firstagenda").length} genhentede, ${groundTruth.filter(g => g.sourceType === "gmail").length} fra gmail)`);
+  return groundTruth;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    DAGLIG INDSAMLING FRA EMAIL (SUPPLEMENT)
    ═══════════════════════════════════════════════════════════════════════ */
@@ -1266,6 +1341,194 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   FAKTA-TJEK — verificerer nyhedsbrev mod dagsordener.middelfart.dk
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Sender nyhedsbrev + kildedata til Gemini for fakta-tjek.
+ * Returnerer altid et objekt med summary + claims (aldrig throws).
+ */
+function factCheckNewsletter_(apiKey, newsletter, groundTruth) {
+  if (!groundTruth || groundTruth.length === 0) {
+    return {
+      summary: { verified: 0, unverified: 0, contradicted: 0 },
+      claims: [],
+      note: "Ingen kildedata at fakta-tjekke mod"
+    };
+  }
+
+  const corpus = groundTruth.map((gt, i) =>
+    `KILDE ${i + 1} [${gt.sourceType}] — ${gt.committee}: ${gt.subject}\n` +
+    `URL: ${gt.sourceUrl}\n` +
+    `INDHOLD:\n${gt.freshText}`
+  ).join("\n\n════════════════════════════════════════\n\n");
+
+  const maxChars = 30000;
+  const truncated = corpus.length > maxChars
+    ? corpus.slice(0, maxChars) + "\n\n[... afkortet pga. længde]"
+    : corpus;
+
+  const prompt = `
+Du er en faktachecker for et politisk nyhedsbrev fra SF Middelfart.
+
+OPGAVE: Sammenlign nyhedsbrevet nedenfor med kildedataen og identificer
+ALLE faktuelle påstande i nyhedsbrevet. For hver påstand: verificer om
+den understøttes af kildedataen.
+
+FOKUS PÅ:
+- Konkrete tal og beløb (kr., procenter, antal)
+- Datoer og tidsangivelser
+- Navne på udvalg, sager, personer
+- Ja/nej-beslutninger og vedtagelser
+- Citater og parafraseringer
+
+IGNORER:
+- Tone, følelser, holdninger (det er et partipolitisk nyhedsbrev)
+- Generelle SF-politiske holdninger
+- Layout-elementer (header, footer, PS, kontaktinfo)
+
+REGLER:
+- Hvis en påstand matcher kildedata (eksakt eller tæt parafrase): "verified"
+- Hvis en påstand MODSIGER kildedata (forkert tal, forkert beslutning): "contradicted"
+- Hvis en påstand ikke kan findes i kildedata: "unverified"
+- Vær KONSERVATIV: hellere "unverified" end "verified" hvis du er i tvivl
+- Kalendermøder i footer-sektionen skal IKKE fakta-tjekkes her
+
+Returner KUN valid JSON i dette format:
+{
+  "summary": { "verified": 0, "unverified": 0, "contradicted": 0 },
+  "claims": [
+    {
+      "claim": "kort beskrivelse af påstanden",
+      "verdict": "verified",
+      "evidence": "kort citat fra kildedata, eller 'ikke fundet i kildedata'",
+      "sourceIndex": 1
+    }
+  ]
+}
+
+════════════════════════════════════════
+NYHEDSBREV (det der skal fakta-tjekkes):
+════════════════════════════════════════
+${newsletter}
+
+════════════════════════════════════════
+KILDEDATA (facit fra dagsordener.middelfart.dk):
+════════════════════════════════════════
+${truncated}
+`.trim();
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
+
+    const response = UrlFetchApp.fetch(url, {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-goog-api-key": apiKey },
+      payload: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.0
+        }
+      }),
+      muteHttpExceptions: true
+    });
+
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      console.log(`   ⚠️ Fakta-tjek API fejl: HTTP ${code}`);
+      return {
+        summary: { verified: 0, unverified: 0, contradicted: 0 },
+        claims: [],
+        error: `Gemini API fejl: HTTP ${code}`
+      };
+    }
+
+    const json = JSON.parse(response.getContentText());
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Tomt svar fra Gemini");
+
+    const result = JSON.parse(text);
+    if (!result.summary) {
+      result.summary = {
+        verified:     result.claims.filter(c => c.verdict === "verified").length,
+        unverified:   result.claims.filter(c => c.verdict === "unverified").length,
+        contradicted: result.claims.filter(c => c.verdict === "contradicted").length
+      };
+    }
+    return result;
+  } catch (e) {
+    console.log(`   ⚠️ Fakta-tjek fejlede: ${e.message}`);
+    return {
+      summary: { verified: 0, unverified: 0, contradicted: 0 },
+      claims: [],
+      error: e.message
+    };
+  }
+}
+
+/**
+ * Formaterer fakta-tjek-resultatet til en læsbar tekstblok
+ * der indsættes øverst i Google Doc'et.
+ */
+function formatFactCheckReport_(factCheck) {
+  const lines = [];
+  lines.push("══════════════════════════════════════════════");
+
+  if (factCheck.error) {
+    lines.push(`⚠️ FAKTA-TJEK KUNNE IKKE KØRES: ${factCheck.error}`);
+    lines.push("Gennemse kladden ekstra grundigt.");
+    lines.push("══════════════════════════════════════════════");
+    return lines.join("\n");
+  }
+
+  if (factCheck.note) {
+    lines.push(`ℹ️ ${factCheck.note}`);
+    lines.push("══════════════════════════════════════════════");
+    return lines.join("\n");
+  }
+
+  const s = factCheck.summary;
+  const icon = s.contradicted > 0 ? "🚫" : s.unverified > 0 ? "⚠️" : "✅";
+
+  lines.push(`${icon} FAKTA-TJEK (automatisk) — gennemse før udsendelse`);
+  lines.push(`Verificeret: ${s.verified}  ·  Uverificeret: ${s.unverified}  ·  Modsagt: ${s.contradicted}`);
+  lines.push("══════════════════════════════════════════════");
+
+  const contradicted = (factCheck.claims || []).filter(c => c.verdict === "contradicted");
+  if (contradicted.length > 0) {
+    lines.push("");
+    lines.push("🚫 MODSAGTE PÅSTANDE (modsiger dagsordener.middelfart.dk):");
+    for (const c of contradicted) {
+      lines.push(`- "${c.claim}"`);
+      lines.push(`  Evidence: ${c.evidence}`);
+    }
+  }
+
+  const unverified = (factCheck.claims || []).filter(c => c.verdict === "unverified");
+  if (unverified.length > 0) {
+    lines.push("");
+    lines.push("⚠️ UVERIFICEREDE PÅSTANDE (ikke fundet i kildedata):");
+    for (const c of unverified) {
+      lines.push(`- "${c.claim}"`);
+      lines.push(`  Evidence: ${c.evidence}`);
+    }
+  }
+
+  if (contradicted.length === 0 && unverified.length === 0) {
+    lines.push("");
+    lines.push("✅ Alle faktuelle påstande i nyhedsbrevet er verificeret mod kildedata.");
+  }
+
+  lines.push("");
+  lines.push("NB: Dette tjek er automatisk — gennemse altid selv kladden.");
+  lines.push("══════════════════════════════════════════════");
+
+  return lines.join("\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    UGENTLIGT NYHEDSBREV
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -1294,6 +1557,10 @@ function generateWeeklyDraft() {
       type:         row[1],
       committee:    row[2],
       subject:      row[3],
+      source:       row[4],
+      sourceId:     row[5],
+      sourceUrl:    row[6],
+      snippet:      row[7],
       tldr:         row[9],
       sfAnalysis:   row[10],
       facts:        row[11],
@@ -1337,16 +1604,38 @@ function generateWeeklyDraft() {
     upcomingMeetings
   });
 
-  // Opret dokument
+  // Fakta-tjek mod dagsordener.middelfart.dk
+  console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
+  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories]);
+  const factCheck   = factCheckNewsletter_(apiKey, draftText, groundTruth);
+
+  const fc = factCheck.summary;
+  console.log(`   ✅ Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`);
+  if (factCheck.error) {
+    console.log(`   ⚠️ Fakta-tjek fejl: ${factCheck.error}`);
+  }
+
+  // Opret dokument med fakta-tjek-rapport øverst
   const folderId = mustGet_(props, CFG.P_DRAFT_FOLDER_ID);
-  const docUrl   = createDraftDocument_(folderId, draftText, dateRange);
+  const docUrl   = createDraftDocument_(folderId, draftText, dateRange, factCheck);
+
+  // Emnelinje afspejler fakta-tjek-status
+  const fcIcon = factCheck.error ? "⚠️"
+    : fc.contradicted > 0        ? "🚫"
+    : fc.unverified > 0          ? "⚠️"
+    :                               "✅";
+
+  const fcLine = factCheck.error
+    ? `Fakta-tjek kunne ikke køres: ${factCheck.error}`
+    : `Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`;
 
   // Send notifikation
   GmailApp.sendEmail(
     Session.getEffectiveUser().getEmail(),
-    `📰 SF Nyhedsbrev kladde klar (${dateRange})`,
+    `📰 ${fcIcon} SF Nyhedsbrev kladde klar (${dateRange})`,
     `Hej Maja!\n\nDit ugentlige nyhedsbrev er klar til gennemsyn.\n\n`
     + `Link: ${docUrl}\n\n`
+    + `${fcIcon} ${fcLine}\n\n`
     + `Statistik:\n`
     + `- Top-sager (score 4-5): ${topStories.length}\n`
     + `- Mellem-sager (score 3): ${mediumStories.length}\n`
@@ -1548,14 +1837,18 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 /**
  * Opretter Google Doc med nyhedsbrevet
  */
-function createDraftDocument_(folderId, content, dateRange) {
+function createDraftDocument_(folderId, content, dateRange, factCheck) {
   const doc  = DocumentApp.create(`SF Middelfart Nyhedsbrev (${dateRange})`);
   const body = doc.getBody();
 
-  // Tilføj indhold
-  body.setText(content);
+  let fullContent = content;
+  if (factCheck) {
+    const report = formatFactCheckReport_(factCheck);
+    fullContent = report + "\n\n\n" + content;
+  }
 
-  // Flyt til mappe
+  body.setText(fullContent);
+
   const file   = DriveApp.getFileById(doc.getId());
   const folder = DriveApp.getFolderById(folderId);
   folder.addFile(file);
