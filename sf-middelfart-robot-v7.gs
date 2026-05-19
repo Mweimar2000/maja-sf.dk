@@ -55,8 +55,8 @@ const CFG = {
   MODEL_NAME: "gemini-3.5-flash",
 
   // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
-  // den genererer et nyhedsbrev, så Pia kun behøver at redigere stilguide.md
-  // og pushe til GitHub — så bruger robotten den nye tone næste gang.
+  // den genererer et nyhedsbrev — redigér stilguide.md og push til GitHub,
+  // så bruger robotten den nye tone næste gang.
   // Hvis fetch fejler, falder robotten tilbage til
   // SF_TONE_GUIDE_FALLBACK-konstanten som er embedded nedenfor.
   STILGUIDE_RAW_URL: "https://raw.githubusercontent.com/Mweimar2000/maja-sf.dk/main/stilguide.md",
@@ -1450,6 +1450,7 @@ ${truncated}
     if (!text) throw new Error("Tomt svar fra Gemini");
 
     const result = JSON.parse(text);
+    result.claims = result.claims || [];
     if (!result.summary) {
       result.summary = {
         verified:     result.claims.filter(c => c.verdict === "verified").length,
@@ -1648,7 +1649,7 @@ function generateWeeklyDraft() {
 }
 
 /**
- * Genererer nyhedsbrev-tekst med Gemini i Pias personlige SF-stemme.
+ * Genererer nyhedsbrev-tekst med Gemini i SF Middelfarts kollektive stemme.
  * Tonen hentes live fra stilguide.md via loadToneGuide_() — med
  * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
@@ -1670,6 +1671,12 @@ function generateNewsletterWithGemini_(apiKey, data) {
 
   // Hent den aktuelle stilguide (live fra GitHub, ellers fallback-konstant)
   const toneGuide = loadToneGuide_();
+
+  // Udtræk nøgletal fra top- og mellemsager til faktaboks
+  const allAmounts = [...(data.topStories || []), ...(data.mediumStories || [])]
+    .filter(i => i.amounts && String(i.amounts).trim())
+    .map(i => `${i.subject}: ${i.amounts}`)
+    .join("\n");
 
   const prompt = `
 Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er SF Middelfart
