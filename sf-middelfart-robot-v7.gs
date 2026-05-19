@@ -52,7 +52,7 @@ const CFG = {
   FA_DAYS_BACK:      7,  // Hent møder fra de sidste N dage
 
   // Model konfiguration
-  MODEL_NAME: "gemini-3-flash-preview",
+  MODEL_NAME: "gemini-3.5-flash",
 
   // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
   // den genererer et nyhedsbrev, så Pia kun behøver at redigere stilguide.md
