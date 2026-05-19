@@ -52,7 +52,14 @@ const CFG = {
   FA_DAYS_BACK:      7,  // Hent møder fra de sidste N dage
 
   // Model konfiguration
-  MODEL_NAME: "gemini-3-flash-preview",
+  MODEL_NAME: "gemini-3.5-flash",
+
+  // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
+  // den genererer et nyhedsbrev, så Pia kun behøver at redigere stilguide.md
+  // og pushe til GitHub — så bruger robotten den nye tone næste gang.
+  // Hvis fetch fejler, falder robotten tilbage til
+  // SF_TONE_GUIDE_FALLBACK-konstanten som er embedded nedenfor.
+  STILGUIDE_RAW_URL: "https://raw.githubusercontent.com/Mweimar2000/maja-sf.dk/main/stilguide.md",
 
   // Behandlingsgrænser
   MAX_THREADS_PER_RUN:    30,
@@ -92,78 +99,101 @@ const CFG = {
 };
 
 /**
- * SF Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten.
+ * SF Nyhedsbrevs-tone — FALLBACK.
  *
- * KILDE: stilguide.md i repo-roden. Denne konstant er en 1:1 kopi.
- * Hvis du ændrer tonen, så opdater BEGGE steder — Google Apps Script
- * kan ikke læse stilguide.md på runtime, så konstanten skal være
- * inline for at robotten faktisk bruger tonen.
+ * Robotten forsøger først at hente den LEVENDE stilguide direkte fra
+ * GitHub via loadToneGuide_() (se CFG.STILGUIDE_RAW_URL). Denne konstant
+ * bruges KUN hvis fetchet fejler (netværk nede, GitHub nede, URL ændret).
+ *
+ * Du kan derfor redigere stilguide.md i repo-roden og pushe — robotten
+ * læser den nye version næste gang den kører. Du behøver ikke længere
+ * holde denne konstant i sync; den er en nødudgang.
  */
-const SF_TONE_GUIDE = `
-SF NYHEDSBREVS-TONE — STILGUIDE
-
-OVERORDNET STEMME:
-Personlig, varm og nærværende — som en samtale mellem venner der deler
-politiske værdier. Aldrig bureaukratisk eller distanceret.
-
-NØGLETRÆK:
-
-1. PERSONLIG TILTALE OG 1. PERSON:
-   Altid "Kære [fornavn]". Afsenderen er Pia, som skriver i jeg-form og
-   deler sine egne tanker og følelser. Fx "Jeg tænker ofte på...",
-   "For mig handler det om...", "Jeg er stadig helt høj."
-
-2. EMOTIONELT OG KROPSLIGT SPROG:
-   Følelser nævnes direkte — stolthed, vrede, glæde, frustration.
-   Fysiske metaforer bruges: "nive mig selv i armen", "et åbent sår",
-   "slider på de ældre". Teksten FØLER noget, den informerer ikke bare.
-
-3. HVERDAGSDANSK MED PUNCH:
-   Uformel og talesprogsnær. Korte, punchede sætninger.
-   Fragmenter som stilmiddel: "Hold. Nu. Op." / "Bare sådan – som en
-   tyv om natten." Udråbstegn og emojis (❤️💚🎉💪) i emnelinjer og
-   nøglemomenter.
-
-4. RETORISKE SPØRGSMÅL OG DIREKTE HENVENDELSE:
-   "Kan du huske, da...?", "Prøv lige at smage på det",
-   "For hvad er det egentlig, der bliver sagt?" Læseren inviteres ind
-   i en tankerække, ikke bare serveret en konklusion.
-
-5. VÆRDIER FØR POLICY:
-   Start ALTID med det menneskelige og følelsesmæssige — en personlig
-   refleksion, en historie, en observation — og DEREFTER det konkrete
-   politiske forslag. Policy er midlet, mennesket er målet.
-
-6. FÆLLESSKABS-RETORIK:
-   "Vi" og "os" er bærende. "Det er jeres fortjeneste", "vi står sammen",
-   "fællesskabet bliver stærkere, jo flere der er med." Modtageren
-   gøres til medspiller, ikke passiv tilhører.
-
-7. KLAR MODSTANDER-MARKERING UDEN PERSONANGREB:
-   Kritik rettes mod politikker og systemer, ikke mennesker. "Skæve
-   skattelettelser til de rigeste", "tillidsbrud", "hovsa-agtigt og
-   uigennemtænkt" — hårdt i sagen, aldrig grimt mod personer.
-
-8. AFSLUTNING MED VARME OG RETNING:
-   Slut ALTID med et fremadrettet budskab og den personlige hilsen
-   "De bedste hilsner, Pia", efterfulgt af en konkret CTA (link til
-   udspil, medlemskab, deling).
-
-SÆTNINGSSTRUKTUR:
-- Korte afsnit (1-3 sætninger per afsnit)
-- Hyppige linjeskift for læsevenlighed
-- Bland meget korte fragmenter med lidt længere forklarende afsnit
-- Emnelinjer er dramatiske, nysgerrighedsvækkende eller følelsesladede,
-  ofte med emojis
-
-UNDGÅ FOR ENHVER PRIS:
-- Fagsprog, teknisk eller bureaukratisk sprog
-- Passiv form ("det blev besluttet" → skriv hellere "de tog fridagen fra os")
-- Neutral, objektiv nyhedsformidling — SF's nyhedsbreve er PARTISKE MED VILJE
-- Lange opremsninger uden emotionel indramning
-- Formuleringer som "Velkommen", "I denne uge har der været stor aktivitet",
-  "Venlig hilsen, SF Middelfart" — det er den GAMLE bureaukratiske tone
+const SF_TONE_GUIDE_FALLBACK = `
+# SF Middelfart Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten
+Afsender: SF Middelfart (aldrig en enkeltperson). Underskrift: "De bedste hilsner, SF Middelfart"
+Overordnet stemme: Varm, nærværende og fællesskabsorienteret — som et lokalt parti der taler direkte til sine medborgere. Polished og velformuleret, men med en menneskelig kant der viser at der står rigtige mennesker bag ordene. Aldrig bureaukratisk eller distanceret.
+Nøgletræk
+1. Vi-form, aldrig jeg-form
+Altid "vi i SF Middelfart", "os i SF Middelfart", "vi mener", "vi kæmper for". Afsenderen er partiet som kollektiv — ikke én person. Eksempler: "Vi sidder med en klump i maven", "Det gør os faktisk rigtig vrede", "Vi holder øje med..."
+2. Direkte henvendelse uden personlig tiltale
+Ingen "Kære [fornavn]" — nyhedsbrevet distribueres via mail, hjemmeside og delte links, ikke som personlig post. I stedet bruges direkte henvendelse til læseren med "du" og "dig": "Kender du det, når...", "Prøv lige at smage på det her", "Tak fordi du læser med", "Del det gerne med nogen du kender." Læseren skal stadig føle sig som en del af holdet — bare uden formel hilsen.
+3. Emotionelt og kropsligt sprog
+Følelser nævnes direkte — stolthed, vrede, glæde, frustration. Fysiske metaforer bruges: "et åbent sår", "velfærden bløder", "Lillebælt gisper efter vejret". Teksten føler noget, den informerer ikke bare.
+4. Hverdagsdansk med punch
+Tonen er uformel og talesprogsnær. Korte, punchede sætninger. Fragmenter bruges som stilmiddel: "Hver. En. Eneste. Gang." Udråbstegn og emojis (❤️💚🎉💪💧) bruges i emnelinjer og nøglemomenter — men med måde i brødteksten.
+5. Retoriske spørgsmål og direkte henvendelse
+"Prøv lige at smage på det her:", "Har vores personale hænderne og roen til at forebygge?" — læseren inviteres ind i en tankerække, ikke bare serveret en konklusion.
+6. Værdier før policy
+Nyhedsbrevene starter ALTID med det menneskelige og følelsesmæssige — en refleksion, en observation, en følelse — og derefter præsenteres det konkrete politiske indhold. Policy er midlet, mennesket er målet.
+7. Fællesskabs-retorik
+"Vi" og "os" er bærende. Modtageren er en del af holdet: "Tak fordi du læser med", "vores allesammens Lillebælt", "vi skal blive ved med at råbe op."
+8. Klar modstander-markering uden personangreb
+Kritik rettes mod politikker, systemer og prioriteringer — aldrig mod enkeltpersoner. "Vi kan ikke bryste os af et millionoverskud, mens de bløde områder bløder" — hårdt i sagen, aldrig grimt mod mennesker.
+9. Afslutning med varme, retning og CTA
+Nyhedsbreve slutter med et fremadrettet budskab, en varm hilsen fra "SF Middelfart", og et konkret call-to-action (del nyhedsbrevet, læs mere, mød op).
+Sætningsstruktur
+Korte afsnit (1-3 sætninger per afsnit)
+Hyppige linjeskift for læsevenlighed
+Blanding af korte fragmenter og lidt længere forklarende afsnit
+Må gerne være polished og velformuleret, men skal stadig have kant — undgå at det bliver for glat eller generisk
+Emnelinjer er dramatiske, nysgerrighedsvækkende eller følelsesladede, ofte med emojis
+Undgå
+Jeg-form (brug altid vi/os i SF Middelfart)
+Underskrift med enkeltpersons navn
+Personlig tiltale som "Kære [navn]" — nyhedsbrevet har ikke individuelle modtagere
+Fagsprog, teknisk eller bureaukratisk sprog
+Passiv form ("det blev besluttet" → "vi ser at..." / "kommunen har valgt at...")
+Neutral, objektiv nyhedsformidling — nyhedsbrevet er partisk med vilje
+Lange opremsninger uden emotionel indramning
+For glatte AI-overgange — lidt ujævnhed og menneskelig energi er bedre end perfekt struktur
 `;
+
+/**
+ * Henter den LEVENDE stilguide fra GitHub (CFG.STILGUIDE_RAW_URL).
+ * Falder tilbage til SF_TONE_GUIDE_FALLBACK hvis fetchet fejler.
+ *
+ * Resultatet caches i 1 time i Script Cache, så vi ikke rammer GitHub
+ * flere gange per run (og så nyhedsbrev-generering bliver hurtigere
+ * hvis noget kalder den gentagne gange).
+ */
+function loadToneGuide_() {
+  const CACHE_KEY = "sf_tone_guide_v1";
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(CACHE_KEY);
+  if (cached) {
+    console.log("   📖 Bruger cached stilguide");
+    return cached;
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(CFG.STILGUIDE_RAW_URL, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'SF-Middelfart-Bot/8.0',
+        'Accept': 'text/plain, text/markdown, */*'
+      }
+    });
+
+    if (response.getResponseCode() === 200) {
+      const text = response.getContentText();
+      if (text && text.length > 200) {  // sanity check: en rigtig stilguide er lang
+        cache.put(CACHE_KEY, text, 3600);  // cache i 1 time
+        console.log(`   📖 Stilguide hentet live fra GitHub (${text.length} tegn)`);
+        return text;
+      }
+      console.log(`   ⚠️ Stilguide fra GitHub er mistænkeligt kort (${text.length} tegn) — bruger fallback`);
+    } else {
+      console.log(`   ⚠️ Kunne ikke hente stilguide: HTTP ${response.getResponseCode()} — bruger fallback`);
+    }
+  } catch (e) {
+    console.log(`   ⚠️ Fejl ved hentning af stilguide: ${e.message} — bruger fallback`);
+  }
+
+  return SF_TONE_GUIDE_FALLBACK;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    SETUP & TRIGGERS
@@ -604,6 +634,81 @@ function extractContentFromAgendaItem_(item) {
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Genhenter kildetekst fra dagsordener.middelfart.dk for de stories
+ * der blev brugt i nyhedsbrevet, så vi kan fakta-tjekke imod.
+ *
+ * FirstAgenda-rækker: genhentes via API (frisk fra kilden).
+ * Gmail-rækker: bruger sheetets snippet som fallback, flagget som "gmail".
+ */
+function collectGroundTruth_(stories) {
+  const groundTruth = [];
+  const meetingMap  = {};
+
+  for (const story of stories) {
+    if (story.source !== "FirstAgenda API" || !story.sourceId) {
+      groundTruth.push({
+        committee:  story.committee,
+        subject:    story.subject,
+        sourceUrl:  story.sourceUrl || "",
+        sourceType: "gmail",
+        freshText:  story.snippet || story.tldr || ""
+      });
+      continue;
+    }
+
+    const parts = String(story.sourceId).split(":");
+    if (parts.length >= 2) {
+      const meetingId = parts[1];
+      if (!meetingMap[meetingId]) meetingMap[meetingId] = [];
+      meetingMap[meetingId].push(story);
+    }
+  }
+
+  if (Object.keys(meetingMap).length > 0) {
+    try {
+      const cookies = authenticateFirstAgenda_();
+
+      for (const [meetingId, meetingStories] of Object.entries(meetingMap)) {
+        console.log(`   🔄 Genhenter møde ${meetingId} fra FirstAgenda...`);
+        const agendaItems = fetchMeetingAgenda_(cookies, meetingId);
+
+        for (const story of meetingStories) {
+          const itemId = String(story.sourceId).split(":")[2];
+          const match  = agendaItems.find(a => String(a.Id) === itemId);
+          const fresh  = match
+            ? extractContentFromAgendaItem_(match)
+            : (story.snippet || story.tldr || "");
+
+          groundTruth.push({
+            committee:  story.committee,
+            subject:    story.subject,
+            sourceUrl:  story.sourceUrl || "",
+            sourceType: match ? "firstagenda" : "firstagenda-cached",
+            freshText:  fresh.slice(0, 5000)
+          });
+        }
+      }
+    } catch (e) {
+      console.log(`   ⚠️ Kunne ikke genhente fra FirstAgenda: ${e.message} — bruger cached snippets`);
+      for (const meetingStories of Object.values(meetingMap)) {
+        for (const story of meetingStories) {
+          groundTruth.push({
+            committee:  story.committee,
+            subject:    story.subject,
+            sourceUrl:  story.sourceUrl || "",
+            sourceType: "firstagenda-cached",
+            freshText:  story.snippet || story.tldr || ""
+          });
+        }
+      }
+    }
+  }
+
+  console.log(`   📚 Ground truth: ${groundTruth.length} kilder (${groundTruth.filter(g => g.sourceType === "firstagenda").length} genhentede, ${groundTruth.filter(g => g.sourceType === "gmail").length} fra gmail)`);
+  return groundTruth;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1236,6 +1341,194 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   FAKTA-TJEK — verificerer nyhedsbrev mod dagsordener.middelfart.dk
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Sender nyhedsbrev + kildedata til Gemini for fakta-tjek.
+ * Returnerer altid et objekt med summary + claims (aldrig throws).
+ */
+function factCheckNewsletter_(apiKey, newsletter, groundTruth) {
+  if (!groundTruth || groundTruth.length === 0) {
+    return {
+      summary: { verified: 0, unverified: 0, contradicted: 0 },
+      claims: [],
+      note: "Ingen kildedata at fakta-tjekke mod"
+    };
+  }
+
+  const corpus = groundTruth.map((gt, i) =>
+    `KILDE ${i + 1} [${gt.sourceType}] — ${gt.committee}: ${gt.subject}\n` +
+    `URL: ${gt.sourceUrl}\n` +
+    `INDHOLD:\n${gt.freshText}`
+  ).join("\n\n════════════════════════════════════════\n\n");
+
+  const maxChars = 30000;
+  const truncated = corpus.length > maxChars
+    ? corpus.slice(0, maxChars) + "\n\n[... afkortet pga. længde]"
+    : corpus;
+
+  const prompt = `
+Du er en faktachecker for et politisk nyhedsbrev fra SF Middelfart.
+
+OPGAVE: Sammenlign nyhedsbrevet nedenfor med kildedataen og identificer
+ALLE faktuelle påstande i nyhedsbrevet. For hver påstand: verificer om
+den understøttes af kildedataen.
+
+FOKUS PÅ:
+- Konkrete tal og beløb (kr., procenter, antal)
+- Datoer og tidsangivelser
+- Navne på udvalg, sager, personer
+- Ja/nej-beslutninger og vedtagelser
+- Citater og parafraseringer
+
+IGNORER:
+- Tone, følelser, holdninger (det er et partipolitisk nyhedsbrev)
+- Generelle SF-politiske holdninger
+- Layout-elementer (header, footer, PS, kontaktinfo)
+
+REGLER:
+- Hvis en påstand matcher kildedata (eksakt eller tæt parafrase): "verified"
+- Hvis en påstand MODSIGER kildedata (forkert tal, forkert beslutning): "contradicted"
+- Hvis en påstand ikke kan findes i kildedata: "unverified"
+- Vær KONSERVATIV: hellere "unverified" end "verified" hvis du er i tvivl
+- Kalendermøder i footer-sektionen skal IKKE fakta-tjekkes her
+
+Returner KUN valid JSON i dette format:
+{
+  "summary": { "verified": 0, "unverified": 0, "contradicted": 0 },
+  "claims": [
+    {
+      "claim": "kort beskrivelse af påstanden",
+      "verdict": "verified",
+      "evidence": "kort citat fra kildedata, eller 'ikke fundet i kildedata'",
+      "sourceIndex": 1
+    }
+  ]
+}
+
+════════════════════════════════════════
+NYHEDSBREV (det der skal fakta-tjekkes):
+════════════════════════════════════════
+${newsletter}
+
+════════════════════════════════════════
+KILDEDATA (facit fra dagsordener.middelfart.dk):
+════════════════════════════════════════
+${truncated}
+`.trim();
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
+
+    const response = UrlFetchApp.fetch(url, {
+      method: "post",
+      contentType: "application/json",
+      headers: { "x-goog-api-key": apiKey },
+      payload: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.0
+        }
+      }),
+      muteHttpExceptions: true
+    });
+
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      console.log(`   ⚠️ Fakta-tjek API fejl: HTTP ${code}`);
+      return {
+        summary: { verified: 0, unverified: 0, contradicted: 0 },
+        claims: [],
+        error: `Gemini API fejl: HTTP ${code}`
+      };
+    }
+
+    const json = JSON.parse(response.getContentText());
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Tomt svar fra Gemini");
+
+    const result = JSON.parse(text);
+    if (!result.summary) {
+      result.summary = {
+        verified:     result.claims.filter(c => c.verdict === "verified").length,
+        unverified:   result.claims.filter(c => c.verdict === "unverified").length,
+        contradicted: result.claims.filter(c => c.verdict === "contradicted").length
+      };
+    }
+    return result;
+  } catch (e) {
+    console.log(`   ⚠️ Fakta-tjek fejlede: ${e.message}`);
+    return {
+      summary: { verified: 0, unverified: 0, contradicted: 0 },
+      claims: [],
+      error: e.message
+    };
+  }
+}
+
+/**
+ * Formaterer fakta-tjek-resultatet til en læsbar tekstblok
+ * der indsættes øverst i Google Doc'et.
+ */
+function formatFactCheckReport_(factCheck) {
+  const lines = [];
+  lines.push("══════════════════════════════════════════════");
+
+  if (factCheck.error) {
+    lines.push(`⚠️ FAKTA-TJEK KUNNE IKKE KØRES: ${factCheck.error}`);
+    lines.push("Gennemse kladden ekstra grundigt.");
+    lines.push("══════════════════════════════════════════════");
+    return lines.join("\n");
+  }
+
+  if (factCheck.note) {
+    lines.push(`ℹ️ ${factCheck.note}`);
+    lines.push("══════════════════════════════════════════════");
+    return lines.join("\n");
+  }
+
+  const s = factCheck.summary;
+  const icon = s.contradicted > 0 ? "🚫" : s.unverified > 0 ? "⚠️" : "✅";
+
+  lines.push(`${icon} FAKTA-TJEK (automatisk) — gennemse før udsendelse`);
+  lines.push(`Verificeret: ${s.verified}  ·  Uverificeret: ${s.unverified}  ·  Modsagt: ${s.contradicted}`);
+  lines.push("══════════════════════════════════════════════");
+
+  const contradicted = (factCheck.claims || []).filter(c => c.verdict === "contradicted");
+  if (contradicted.length > 0) {
+    lines.push("");
+    lines.push("🚫 MODSAGTE PÅSTANDE (modsiger dagsordener.middelfart.dk):");
+    for (const c of contradicted) {
+      lines.push(`- "${c.claim}"`);
+      lines.push(`  Evidence: ${c.evidence}`);
+    }
+  }
+
+  const unverified = (factCheck.claims || []).filter(c => c.verdict === "unverified");
+  if (unverified.length > 0) {
+    lines.push("");
+    lines.push("⚠️ UVERIFICEREDE PÅSTANDE (ikke fundet i kildedata):");
+    for (const c of unverified) {
+      lines.push(`- "${c.claim}"`);
+      lines.push(`  Evidence: ${c.evidence}`);
+    }
+  }
+
+  if (contradicted.length === 0 && unverified.length === 0) {
+    lines.push("");
+    lines.push("✅ Alle faktuelle påstande i nyhedsbrevet er verificeret mod kildedata.");
+  }
+
+  lines.push("");
+  lines.push("NB: Dette tjek er automatisk — gennemse altid selv kladden.");
+  lines.push("══════════════════════════════════════════════");
+
+  return lines.join("\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    UGENTLIGT NYHEDSBREV
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -1264,6 +1557,10 @@ function generateWeeklyDraft() {
       type:         row[1],
       committee:    row[2],
       subject:      row[3],
+      source:       row[4],
+      sourceId:     row[5],
+      sourceUrl:    row[6],
+      snippet:      row[7],
       tldr:         row[9],
       sfAnalysis:   row[10],
       facts:        row[11],
@@ -1307,16 +1604,38 @@ function generateWeeklyDraft() {
     upcomingMeetings
   });
 
-  // Opret dokument
+  // Fakta-tjek mod dagsordener.middelfart.dk
+  console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
+  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories]);
+  const factCheck   = factCheckNewsletter_(apiKey, draftText, groundTruth);
+
+  const fc = factCheck.summary;
+  console.log(`   ✅ Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`);
+  if (factCheck.error) {
+    console.log(`   ⚠️ Fakta-tjek fejl: ${factCheck.error}`);
+  }
+
+  // Opret dokument med fakta-tjek-rapport øverst
   const folderId = mustGet_(props, CFG.P_DRAFT_FOLDER_ID);
-  const docUrl   = createDraftDocument_(folderId, draftText, dateRange);
+  const docUrl   = createDraftDocument_(folderId, draftText, dateRange, factCheck);
+
+  // Emnelinje afspejler fakta-tjek-status
+  const fcIcon = factCheck.error ? "⚠️"
+    : fc.contradicted > 0        ? "🚫"
+    : fc.unverified > 0          ? "⚠️"
+    :                               "✅";
+
+  const fcLine = factCheck.error
+    ? `Fakta-tjek kunne ikke køres: ${factCheck.error}`
+    : `Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`;
 
   // Send notifikation
   GmailApp.sendEmail(
     Session.getEffectiveUser().getEmail(),
-    `📰 SF Nyhedsbrev kladde klar (${dateRange})`,
+    `📰 ${fcIcon} SF Nyhedsbrev kladde klar (${dateRange})`,
     `Hej Maja!\n\nDit ugentlige nyhedsbrev er klar til gennemsyn.\n\n`
     + `Link: ${docUrl}\n\n`
+    + `${fcIcon} ${fcLine}\n\n`
     + `Statistik:\n`
     + `- Top-sager (score 4-5): ${topStories.length}\n`
     + `- Mellem-sager (score 3): ${mediumStories.length}\n`
@@ -1330,12 +1649,16 @@ function generateWeeklyDraft() {
 
 /**
  * Genererer nyhedsbrev-tekst med Gemini i Pias personlige SF-stemme.
- * Se SF_TONE_GUIDE-konstanten øverst i filen for hele tonen.
+ * Tonen hentes live fra stilguide.md via loadToneGuide_() — med
+ * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
 function generateNewsletterWithGemini_(apiKey, data) {
-  // Byg kalender-blokken fra fetchUpcomingMeetings_ — formateret på dansk
-  // så Gemini ikke kan hallucinere datoer eller weekdays.
   const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const weekNum = Utilities.formatDate(now, tz, "w");
+  const year = Utilities.formatDate(now, tz, "yyyy");
+
+  // Kalender-blok fra fetchUpcomingMeetings_ — formateret på dansk
   const upcoming = data.upcomingMeetings || [];
   const calendarBlock = upcoming.length > 0
     ? upcoming.map(m => {
@@ -1345,19 +1668,25 @@ function generateNewsletterWithGemini_(apiKey, data) {
       }).join("\n")
     : "(Der er ingen åbne møder planlagt i den kommende uge.)";
 
+  // Hent den aktuelle stilguide (live fra GitHub, ellers fallback-konstant)
+  const toneGuide = loadToneGuide_();
+
   const prompt = `
-Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er Pia — en SF-politiker
-i Middelfart. Du skriver ikke som "robotten", du skriver SOM Pia, i 1. person.
+Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er SF Middelfart
+som fællesskab — "vi", "os", "vi i SF". Du skriver ikke som en enkeltperson,
+men som et varmt, engageret politisk fællesskab.
 
-Perioden der lige er gået: ${data.dateRange}
+Perioden: ${data.dateRange}
+Ugenummer: ${weekNum}
+År: ${year}
 
 ════════════════════════════════════════
-TONE — DETTE ER DET VIGTIGSTE AFSNIT
+TONE & LAYOUT — DETTE ER DET VIGTIGSTE
 ════════════════════════════════════════
-${SF_TONE_GUIDE}
+${toneGuide}
 ════════════════════════════════════════
 
-SF MIDDELFARTS MÆRKESAGER (brug dem som VÆRDI-RAMME, ikke som punktliste):
+SF MIDDELFARTS MÆRKESAGER (brug som VÆRDI-RAMME, ikke opremsning):
 1. Velfærd: Kortere ventetid til psykolog, bedre ældrepleje, tid til omsorg
 2. Børn & Unge: Tidlig indsats, flere hænder i institutioner, mindre præstationspres
 3. Klima: Grøn transport, cykelstier, naturbeskyttelse, klimaneutral kommune
@@ -1368,85 +1697,110 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER
 ════════════════════════════════════════
 * Skriv KUN om sager der fremgår af DATA-sektionen nedenfor.
 * INGEN opdigtede citater, holdninger eller hændelser — heller ikke når du
-  forsøger at ramme Pias personlige tone. Følelser er tilladt, facts er ikke.
+  forsøger at ramme SF-tonen. Følelser er tilladt, facts er ikke.
 * Brug KONKRETE tal og fakta fra data (beløb, procenter, datoer, navne).
+* FAKTABOKSEN må KUN indeholde tal fra data nedenfor. Digt ikke tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
   Tilføj ALDRIG andre datoer. Hvis listen er tom, så sig det ærligt.
-* Hvis ugen er stille, så sig det ærligt i Pias personlige stemme — digt
-  IKKE sager op for at fylde nyhedsbrevet.
+* Hvis ugen er stille, så sig det ærligt i SF-stemme — digt IKKE sager op.
 
 ════════════════════════════════════════
 DATA — UGENS SAGER (${data.dateRange})
 ════════════════════════════════════════
 
-TOP-SAGER (score 4-5) — disse er ugens vigtigste politiske historier:
+TOP-SAGER (score 4-5) — ugens vigtigste politiske historier:
 ${JSON.stringify(data.topStories, null, 2)}
 
 MELLEM-SAGER (score 3):
 ${JSON.stringify(data.mediumStories, null, 2)}
 
-ADMINISTRATIVE SAGER (score 1-2) — disse skal normalt IKKE nævnes i prosa,
+ADMINISTRATIVE SAGER (score 1-2) — nævn normalt IKKE i prosa,
 med mindre de giver en politisk pointe:
 ${JSON.stringify(data.adminItems, null, 2)}
+
+NØGLETAL FRA DATA (brug i FAKTABOKSEN):
+${allAmounts || "(Ingen konkrete beløb/tal fundet i denne uges data.)"}
 
 ════════════════════════════════════════
 KOMMENDE MØDER (NÆSTE UGE) — KALENDER-KILDE
 ════════════════════════════════════════
-Kun disse datoer må stå i KALENDER-sektionen:
 ${calendarBlock}
 
 ════════════════════════════════════════
-STRUKTUR — i DENNE rækkefølge (værdier før policy!)
+LAYOUT — skriv i DENNE rækkefølge
 ════════════════════════════════════════
 
-FØRSTE LINJE: Skriv "EMNE: " efterfulgt af en dramatisk, nysgerrighedsvækkende
-eller følelsesladet emnelinje med emoji (f.eks. ❤️💚🎉💪). INGEN dato i emnet.
+DIT OUTPUT SKAL HAVE PRÆCIS DENNE STRUKTUR:
 
-DEREFTER et tomt linjeskift og så selve nyhedsbrevet:
+--- SEKTION 1: HEADER ---
+Skriv på én linje:
+SF Middelfart · Uge ${weekNum}, ${year} · UGENTLIGT NYHEDSBREV
 
-1. HILSEN: "Kære [fornavn]," — nøjagtig sådan. [fornavn] er en placeholder
-   som Pia selv udfylder i sin mailtjeneste bagefter.
+--- SEKTION 2: HERO-OVERSKRIFT ---
+En dramatisk, følelsesladet overskrift med emojis (❤️💚💔💪💧🎉).
+Fanger essensen af ugens vigtigste sag. Fed skrift (**overskrift**).
+Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
-2. PERSONLIG ÅBNING (3-6 korte linjer):
-   Start med en følelse, en refleksion, et billede, en fysisk metafor —
-   noget MENNESKELIGT, som kobler til én af ugens top-sager. IKKE et resume,
-   IKKE en opremsning. Læseren skal føle noget.
+--- SEKTION 3: HOVEDTEKST ---
+2-3 tematiske blokke med **fed mellemrubrik** for hver. Hvert tema:
+- Start med en følelse, en refleksion, et retorisk spørgsmål —
+  noget MENNESKELIGT. ALDRIG med tal eller opremsning.
+- DEREFTER: konkrete tal fra data, pakket ind i værdier.
+- Korte afsnit (1-3 sætninger), hyppige linjeskift.
+- Fragmenter som stilmiddel: "Hver. En. Eneste. Gang."
+- "vi i SF", "vores", "os", "sammen"
+- Kritik mod systemer, aldrig mod navngivne personer.
 
-3. UGENS SAG(ER): Fortæl de vigtigste top-sager som Pia ville fortælle dem
-   til en ven. Brug konkrete tal fra data, men pak dem ind i værdier: hvad
-   betyder det her for de mennesker det rammer? Brug korte afsnit, retoriske
-   spørgsmål, "vi/os"-sprog.
+--- SEKTION 4: LIDT AF HVERT FRA UGEN ---
+Overskrift: **Lidt af hvert fra ugen**
+3-5 punkter fra mellem-sagerne. Hver med:
+emoji + **fed titel** + bindestreg + 1-2 sætninger med emotionel indramning.
+Eksempel: 🌳 **Naturtalenter** — Der er startet et 12-ugers forløb for
+5. klasser, der mistrives. Naturen kan noget helt særligt!
 
-4. KORT NYT (valgfrit): Kun hvis der er mellem-sager der faktisk rykker.
-   Må godt være en lille liste — men HVER linje skal have et menneskeligt
-   greb, ikke bare en faktaopremsning.
+--- SEKTION 5: FAKTABOKS ---
+Overskrift: **Ugens nøgletal**
+4-7 punkter med nøgletal direkte fra DATA. Format:
+emoji + tal + bindestreg + kort forklaring
+Eksempel:
+- 💰 212,4 mio. kr. — overskud på kommunens drift
+- ⚖️ 3 ud af 5 — handicapsager med retlige mangler
+KUN tal der findes i DATA-sektionen ovenfor. Digt ALDRIG tal op.
 
-5. KALENDER — NÆSTE UGE:
-   En kort intro-linje i Pias stemme ("Her er hvad vi holder øje med i den
-   kommende uge:" eller lignende), og DEREFTER præcis de møder der står i
-   KOMMENDE MØDER-blokken ovenfor — ingen andre datoer. Hvis blokken er tom,
-   så sig det ærligt i én sætning.
+--- SEKTION 6: FOOTER — KOMMENDE UDVALGSMØDER ---
+Overskrift: **Vi holder øje med næste uge:**
+List PRÆCIS de møder fra KOMMENDE MØDER-blokken ovenfor. Format:
+- Ugedag d. [dato] kl. [tid] — [udvalg]
+Tilføj INGEN andre møder eller datoer. Hvis blokken er tom,
+skriv: "Der er ingen planlagte møder i den kommende uge."
 
-6. VARM AFSLUTNING (2-4 linjer):
-   Fremadrettet budskab. Fællesskabs-retorik. Afslut med præcis:
-   "De bedste hilsner,
-   Pia"
-   og DEREFTER én linje med en konkret CTA (f.eks. "PS: Kender du nogen der
-   også burde være med? Del det her nyhedsbrev 💚" eller "PS: Bliv medlem
-   af SF — sammen er vi stærkere ❤️").
+--- SEKTION 7: AFSLUTNING ---
+1-2 sætninger med fremadrettet fællesskabs-budskab. Derefter:
+
+De bedste hilsner,
+SF Middelfart
+
+PS: CTA med emoji (f.eks. "Kender du en, der også brænder for et
+grønnere og mere retfærdigt Middelfart? Del endelig nyhedsbrevet 💚")
+
+---
+Kontakt: middelfartsf@gmail.com
 
 ════════════════════════════════════════
-FORBUDTE FORMULERINGER (disse er den GAMLE tone og må IKKE bruges)
+FORBUDTE FORMULERINGER
 ════════════════════════════════════════
+- "Kære [fornavn]" eller enhver anden personlig tiltale/hilsen
 - "Velkommen" / "I denne uge har der været stor aktivitet"
 - "Vi har set nærmere på..."
-- "Venlig hilsen, SF Middelfart"
+- Jeg-form ("jeg", "mig", "min") — brug altid "vi/os i SF Middelfart"
+- Underskrift med enkeltpersons navn — kun "SF Middelfart"
+- "Venlig hilsen, SF Middelfart" (brug "De bedste hilsner, SF Middelfart")
 - Passiv form ("det blev besluttet", "der er iværksat")
 - Bureaukratiske udtryk ("budgetopfølgning viser", "forvaltningen vurderer")
-- Neutrale overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE"
-  (brug hellere emotionelle mellemrubrikker eller helt slip overskrifterne)
+- Overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE", "SF'S FOKUS"
+- Fortidige datoer i kalender-sektionen
 
-Skriv nyhedsbrevet nu — på dansk, i Pias stemme, fra hjertet.
+Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 `;
 
   try {
@@ -1483,14 +1837,18 @@ Skriv nyhedsbrevet nu — på dansk, i Pias stemme, fra hjertet.
 /**
  * Opretter Google Doc med nyhedsbrevet
  */
-function createDraftDocument_(folderId, content, dateRange) {
+function createDraftDocument_(folderId, content, dateRange, factCheck) {
   const doc  = DocumentApp.create(`SF Middelfart Nyhedsbrev (${dateRange})`);
   const body = doc.getBody();
 
-  // Tilføj indhold
-  body.setText(content);
+  let fullContent = content;
+  if (factCheck) {
+    const report = formatFactCheckReport_(factCheck);
+    fullContent = report + "\n\n\n" + content;
+  }
 
-  // Flyt til mappe
+  body.setText(fullContent);
+
   const file   = DriveApp.getFileById(doc.getId());
   const folder = DriveApp.getFolderById(folderId);
   folder.addFile(file);
