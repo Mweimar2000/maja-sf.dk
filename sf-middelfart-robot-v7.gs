@@ -1733,16 +1733,24 @@ SF MIDDELFARTS MÆRKESAGER (brug som VÆRDI-RAMME, ikke opremsning):
 4. Lighed: Plads til alle, fritidspas, bekæmpelse af ulighed
 
 ════════════════════════════════════════
-ABSOLUTTE ANTI-HALLUCINATIONS-REGLER
+ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
 ════════════════════════════════════════
-* Skriv KUN om sager der fremgår af DATA-sektionen nedenfor.
-* INGEN opdigtede citater, holdninger eller hændelser — heller ikke når du
-  forsøger at ramme SF-tonen. Følelser er tilladt, facts er ikke.
-* Brug KONKRETE tal og fakta fra data (beløb, procenter, datoer, navne).
-* FAKTABOKSEN må KUN indeholde tal fra data nedenfor. Digt ikke tal op.
+* DU MÅ KUN BRUGE FAKTA, TAL, DATOER, NAVNE OG BEGIVENHEDER DER STÅR
+  I DATA-SEKTIONEN NEDENFOR. Alt andet er FORBUDT.
+* INGEN opdigtede citater, holdninger, hændelser, statistikker, årstal
+  eller facts fra din egen viden — heller ikke når du forsøger at ramme
+  SF-tonen. Du må IKKE supplere med viden om systemer, organisationer
+  eller historik der IKKE fremgår af data.
+* Følelser og SF-værdier er tilladt. Konkrete facts er KUN tilladt hvis
+  de kommer direkte fra DATA-sektionen.
+* FAKTABOKSEN må KUN indeholde tal fra DATA. Hvis der er færre end 3
+  nøgletal i data, så skriv kun dem der er. Digt ALDRIG tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
-  Tilføj ALDRIG andre datoer. Hvis listen er tom, så sig det ærligt.
-* Hvis ugen er stille, så sig det ærligt i SF-stemme — digt IKKE sager op.
+  Tilføj ALDRIG andre møder eller datoer. Hvis listen er tom, så sig det.
+* STILLE UGE: Hvis der er få sager, skriv et kortere nyhedsbrev med
+  ægte SF-refleksioner og værdier — men digt IKKE sager eller fakta op
+  for at fylde ud. Et ærligt kort nyhedsbrev er bedre end et langt med
+  opdigtede facts.
 
 ════════════════════════════════════════
 DATA — UGENS SAGER (${data.dateRange})
@@ -1782,7 +1790,8 @@ Fanger essensen af ugens vigtigste sag. Fed skrift (**overskrift**).
 Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
 --- SEKTION 3: HOVEDTEKST ---
-2-3 tematiske blokke med **fed mellemrubrik** for hver. Hvert tema:
+1-3 tematiske blokke med **fed mellemrubrik** for hver (tilpas antal
+til mængden af data — skriv færre blokke hvis der er få sager). Hvert tema:
 - Start med en følelse, en refleksion, et retorisk spørgsmål —
   noget MENNESKELIGT. ALDRIG med tal eller opremsning.
 - DEREFTER: konkrete tal fra data, pakket ind i værdier.
@@ -1793,19 +1802,23 @@ Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
 --- SEKTION 4: LIDT AF HVERT FRA UGEN ---
 Overskrift: **Lidt af hvert fra ugen**
-3-5 punkter fra mellem-sagerne. Hver med:
+1-5 punkter fra mellem-sagerne (tilpas antal til hvad der rent faktisk
+er i data — spring sektionen HELT OVER hvis der er 0 mellem-sager).
+Hver med:
 emoji + **fed titel** + bindestreg + 1-2 sætninger med emotionel indramning.
 Eksempel: 🌳 **Naturtalenter** — Der er startet et 12-ugers forløb for
 5. klasser, der mistrives. Naturen kan noget helt særligt!
 
 --- SEKTION 5: FAKTABOKS ---
 Overskrift: **Ugens nøgletal**
-4-7 punkter med nøgletal direkte fra DATA. Format:
+Nøgletal direkte fra DATA. Format:
 emoji + tal + bindestreg + kort forklaring
 Eksempel:
 - 💰 212,4 mio. kr. — overskud på kommunens drift
 - ⚖️ 3 ud af 5 — handicapsager med retlige mangler
 KUN tal der findes i DATA-sektionen ovenfor. Digt ALDRIG tal op.
+Hvis der er færre end 3 nøgletal, skriv kun dem der er.
+Hvis der er 0 nøgletal, spring sektionen HELT OVER.
 
 --- SEKTION 6: FOOTER — KOMMENDE UDVALGSMØDER ---
 Overskrift: **Vi holder øje med næste uge:**
