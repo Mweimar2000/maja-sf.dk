@@ -250,12 +250,22 @@ function dailyIngest() {
 }
 
 /**
- * Test-funktion til at køre manuelt
+ * Test-funktion: kun indsamling (FirstAgenda + email).
+ * Kør testGenerateNewsletter() bagefter for nyhedsbrev.
  */
 function testManualRun() {
-  console.log("🧪 Starter manuel test...");
+  console.log("🧪 Starter manuel indsamling...");
   ingestFromFirstAgendaApi();
   ingestInboxEmails();
+  console.log("✅ Indsamling færdig. Kør testGenerateNewsletter() for nyhedsbrev.");
+}
+
+/**
+ * Test-funktion: kun nyhedsbrev-generering (med fakta-tjek).
+ * Kræver at der allerede er data i regnearket.
+ */
+function testGenerateNewsletter() {
+  console.log("🧪 Starter manuel nyhedsbrev-generering...");
   generateWeeklyDraft();
 }
 
@@ -643,7 +653,7 @@ function extractContentFromAgendaItem_(item) {
  * FirstAgenda-rækker: genhentes via API (frisk fra kilden).
  * Gmail-rækker: bruger sheetets snippet som fallback, flagget som "gmail".
  */
-function collectGroundTruth_(stories) {
+function collectGroundTruth_(stories, existingCookies) {
   const groundTruth = [];
   const meetingMap  = {};
 
@@ -669,7 +679,7 @@ function collectGroundTruth_(stories) {
 
   if (Object.keys(meetingMap).length > 0) {
     try {
-      const cookies = authenticateFirstAgenda_();
+      const cookies = existingCookies || authenticateFirstAgenda_();
 
       for (const [meetingId, meetingStories] of Object.entries(meetingMap)) {
         console.log(`   🔄 Genhenter møde ${meetingId} fra FirstAgenda...`);
@@ -1590,10 +1600,33 @@ function generateWeeklyDraft() {
   console.log(`  📌 Mellem-sager: ${mediumStories.length}`);
   console.log(`  📁 Administrative: ${adminItems.length}`);
 
-  // Hent NÆSTE uges møder til kalender-sektionen
-  // (9 dage = hele næste kalenderuge, uanset hvilken ugedag robotten kører)
-  console.log("📅 Henter kommende møder...");
-  const upcomingMeetings = fetchUpcomingMeetings_(9);
+  // Én samlet FirstAgenda-auth til både kalender og fakta-tjek
+  console.log("🔑 Autenticerer mod FirstAgenda (én gang)...");
+  let faCookies = null;
+  let upcomingMeetings = [];
+  try {
+    faCookies = authenticateFirstAgenda_();
+    const committees = fetchCommitteeList_(faCookies);
+
+    const limit = new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000);
+    for (const committee of committees) {
+      for (const m of committee.meetings) {
+        if (!m.Dato) continue;
+        const d = new Date(m.Dato);
+        if (isNaN(d.getTime()) || d < now || d > limit || m.Afsluttet) continue;
+        upcomingMeetings.push({
+          committee: committee.name,
+          name: m.Navn || "Møde",
+          date: d,
+          meetingId: m.Id
+        });
+      }
+    }
+    upcomingMeetings.sort((a, b) => a.date - b.date);
+    console.log(`   📅 ${upcomingMeetings.length} kommende møder`);
+  } catch (e) {
+    console.log(`   ⚠️ FirstAgenda fejl: ${e.message} — fortsætter uden kalender`);
+  }
 
   // Generer nyhedsbrev
   const dateRange = formatDateRange_(weekAgo, now);
@@ -1605,9 +1638,9 @@ function generateWeeklyDraft() {
     upcomingMeetings
   });
 
-  // Fakta-tjek mod dagsordener.middelfart.dk
+  // Fakta-tjek mod dagsordener.middelfart.dk (genbruger cookies fra ovenfor)
   console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
-  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories]);
+  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories], faCookies);
   const factCheck   = factCheckNewsletter_(apiKey, draftText, groundTruth);
 
   const fc = factCheck.summary;
