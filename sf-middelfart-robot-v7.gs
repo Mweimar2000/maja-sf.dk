@@ -1850,7 +1850,7 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 4000
+        maxOutputTokens: 16384
       }
     };
 
@@ -1864,8 +1864,22 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 
     const json = JSON.parse(response.getContentText());
 
-    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-      return json.candidates[0].content.parts[0].text;
+    const candidate = json.candidates?.[0];
+    if (candidate) {
+      const finishReason = candidate.finishReason || "UNKNOWN";
+      if (finishReason !== "STOP") {
+        console.log(`⚠️ Gemini stoppede med finishReason: ${finishReason} (forventet: STOP)`);
+      }
+      const text = candidate.content?.parts?.[0]?.text;
+      if (text) {
+        if (!text.includes("SEKTION 7") && !text.includes("De bedste hilsner")) {
+          console.log("⚠️ Nyhedsbrevet ser ufuldstændigt ud — mangler SEKTION 7 / afslutning");
+        }
+        return text;
+      }
+    }
+    if (json.error) {
+      console.log(`❌ Gemini API-fejl: ${json.error.message || JSON.stringify(json.error)}`);
     }
   } catch (e) {
     console.log(`❌ Fejl ved nyhedsbrev-generering: ${e.message}`);
