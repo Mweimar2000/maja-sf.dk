@@ -1641,7 +1641,23 @@ function generateWeeklyDraft() {
   // Fakta-tjek mod dagsordener.middelfart.dk (genbruger cookies fra ovenfor)
   console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
   const groundTruth = collectGroundTruth_([...topStories, ...mediumStories], faCookies);
-  const factCheck   = factCheckNewsletter_(apiKey, draftText, groundTruth);
+
+  // Tilføj kommende møder som ground truth så fakta-tjekket kan
+  // verificere kalender-sektionen (i stedet for at flagge dem som uverificerede)
+  const tz = Session.getScriptTimeZone();
+  for (const m of upcomingMeetings) {
+    const day  = Utilities.formatDate(m.date, tz, "EEEE d. MMMM");
+    const time = Utilities.formatDate(m.date, tz, "HH:mm");
+    groundTruth.push({
+      committee:  m.committee,
+      subject:    `Kommende møde: ${m.name}`,
+      sourceUrl:  "",
+      sourceType: "kalender",
+      freshText:  `${m.committee} holder møde ${day} kl. ${time} (${m.name}).`
+    });
+  }
+
+  const factCheck = factCheckNewsletter_(apiKey, draftText, groundTruth);
 
   const fc = factCheck.summary;
   console.log(`   ✅ Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`);
