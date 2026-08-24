@@ -55,8 +55,8 @@ const CFG = {
   MODEL_NAME: "gemini-3.7-flash",
 
   // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
-  // den genererer et nyhedsbrev, så Pia kun behøver at redigere stilguide.md
-  // og pushe til GitHub — så bruger robotten den nye tone næste gang.
+  // den genererer et nyhedsbrev — redigér stilguide.md og push til GitHub,
+  // så bruger robotten den nye tone næste gang.
   // Hvis fetch fejler, falder robotten tilbage til
   // SF_TONE_GUIDE_FALLBACK-konstanten som er embedded nedenfor.
   STILGUIDE_RAW_URL: "https://raw.githubusercontent.com/Mweimar2000/maja-sf.dk/main/stilguide.md",
@@ -250,12 +250,22 @@ function dailyIngest() {
 }
 
 /**
- * Test-funktion til at køre manuelt
+ * Test-funktion: kun indsamling (FirstAgenda + email).
+ * Kør testGenerateNewsletter() bagefter for nyhedsbrev.
  */
 function testManualRun() {
-  console.log("🧪 Starter manuel test...");
+  console.log("🧪 Starter manuel indsamling...");
   ingestFromFirstAgendaApi();
   ingestInboxEmails();
+  console.log("✅ Indsamling færdig. Kør testGenerateNewsletter() for nyhedsbrev.");
+}
+
+/**
+ * Test-funktion: kun nyhedsbrev-generering (med fakta-tjek).
+ * Kræver at der allerede er data i regnearket.
+ */
+function testGenerateNewsletter() {
+  console.log("🧪 Starter manuel nyhedsbrev-generering...");
   generateWeeklyDraft();
 }
 
@@ -375,21 +385,32 @@ function ingestFromFirstAgendaApi() {
   // TRIN 2: Hent udvalgsliste med møder
   const committees = fetchCommitteeList_(cookies);
 
-  // TRIN 3: Find møder fra de sidste N dage
-  const cutoff   = new Date(Date.now() - CFG.FA_DAYS_BACK * 24 * 60 * 60 * 1000);
-  const lastFaMs = Number(props.getProperty("LAST_FA_PROCESSED_MS") || 0);
-  const tz       = Session.getScriptTimeZone();
-  const newRows  = [];
+  // TRIN 3: Find møder fra de sidste N dage.
+  // Dedup sker via ID (kolonne F) — så kendte punkter springes over,
+  // og dagsorden-rækker kan OPDATERES når referatet med de faktiske
+  // beslutninger udkommer.
+  const cutoff  = new Date(Date.now() - CFG.FA_DAYS_BACK * 24 * 60 * 60 * 1000);
+  const tz      = Session.getScriptTimeZone();
+  const newRows = [];
+
+  const existingById = {};
+  const allData = sheet.getDataRange().getValues();
+  for (let i = 1; i < allData.length; i++) {
+    existingById[String(allData[i][5])] = { sheetRow: i + 1, type: String(allData[i][1]) };
+  }
+
+  const referatUpdates = [];
 
   for (const committee of committees) {
     for (const meeting of committee.meetings) {
+      if (!meeting.Dato) continue;
       const meetingDate = new Date(meeting.Dato);
+      if (isNaN(meetingDate.getTime())) continue;
 
-      // Spring over møder der er for gamle eller allerede behandlet
+      // Spring møder over der er ældre end indsamlingsvinduet
       if (meetingDate < cutoff) continue;
-      if (meetingDate.getTime() <= lastFaMs) continue;
 
-      console.log(`\n📋 ${committee.name}: ${meeting.Navn || "Møde"} (${meeting.Dato.slice(0,10)})`);
+      console.log(`\n📋 ${committee.name}: ${meeting.Navn || "Møde"} (${String(meeting.Dato).slice(0,10)})`);
 
       // TRIN 4: Hent fuld dagsorden for dette møde
       const agendaItems = fetchMeetingAgenda_(cookies, meeting.Id);
@@ -404,10 +425,27 @@ function ingestFromFirstAgendaApi() {
       for (const item of agendaItems) {
         if (!item.IsOpen) continue;  // Spring lukkede punkter over
 
-        const content = extractContentFromAgendaItem_(item);
-        const receivedAt = Utilities.formatDate(meetingDate, tz, "yyyy-MM-dd HH:mm");
+        const id         = `FA:${meeting.Id}:${item.Id}`;
         const sourceType = meeting.Afsluttet ? "Referat" : "Dagsorden";
-        const itemUrl = `${CFG.FA_BASE_URL}/Vis/${sourceType === "Referat" ? "Referat" : "Dagsorden"}/${meeting.Id}`;
+        const existing   = existingById[id];
+
+        // Kendt punkt: opdater kun hvis dagsordenen nu er blevet til
+        // referat — referatet indeholder de faktiske beslutninger
+        if (existing) {
+          if (sourceType === "Referat" && existing.type === "Dagsorden") {
+            referatUpdates.push({
+              sheetRow:  existing.sheetRow,
+              subject:   item.Caption || item.Navn || "Ukendt",
+              committee: committee.name,
+              content:   extractContentFromAgendaItem_(item)
+            });
+          }
+          continue;
+        }
+
+        const content    = extractContentFromAgendaItem_(item);
+        const receivedAt = Utilities.formatDate(meetingDate, tz, "yyyy-MM-dd HH:mm");
+        const itemUrl    = `${CFG.FA_BASE_URL}/Vis/${sourceType}/${meeting.Id}`;
 
         newRows.push([
           receivedAt,                              // A: Modtaget
@@ -415,7 +453,7 @@ function ingestFromFirstAgendaApi() {
           committee.name,                          // C: Udvalg
           item.Caption || item.Navn || "Ukendt",   // D: Emne
           "FirstAgenda API",                        // E: Fra
-          `FA:${meeting.Id}:${item.Id}`,           // F: ID
+          id,                                       // F: ID
           itemUrl,                                  // G: URL
           content.slice(0, 8000),                  // H: Snippet (mere tekst = bedre analyse)
           item.Bilag ? item.Bilag.map(b => b.Navn).join("; ") : "",  // I: Bilag
@@ -430,30 +468,53 @@ function ingestFromFirstAgendaApi() {
     }
   }
 
+  // Opdater dagsorden-rækker hvor referatet nu er udkommet, så
+  // nyhedsbrevet bygger på de faktiske beslutninger
+  if (referatUpdates.length > 0) {
+    console.log(`\n🔁 ${referatUpdates.length} punkter har fået referat — opdaterer med beslutninger...`);
+    const apiKey = mustGet_(props, CFG.P_API_KEY);
+
+    for (const upd of referatUpdates) {
+      console.log(`   📋 ${upd.subject}`);
+      sheet.getRange(upd.sheetRow, 2).setValue("Referat");                    // B: Type
+      sheet.getRange(upd.sheetRow, 8).setValue(upd.content.slice(0, 8000));   // H: Snippet
+
+      if (isAdministrativeSubject_(upd.subject)) {
+        sheet.getRange(upd.sheetRow, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
+        continue;
+      }
+
+      try {
+        const analysis = analyzeWithGemini_(apiKey, {
+          subject:   upd.subject,
+          committee: upd.committee,
+          content:   upd.content,
+          pdfBase64: null
+        });
+        sheet.getRange(upd.sheetRow, 10, 1, 6).setValues([[
+          analysis.tldr         || "Kunne ikke analyseres",
+          analysis.sfAnalysis   || "",
+          analysis.facts        || "",
+          analysis.amounts      || "",
+          analysis.score        || 3,
+          analysis.programMatch || ""
+        ]]);
+      } catch (e) {
+        console.log(`   ❌ Fejl ved re-analyse: ${e.message}`);
+      }
+
+      Utilities.sleep(500);  // Rate limiting
+    }
+  }
+
   if (newRows.length > 0) {
     console.log(`\n✅ ${newRows.length} nye dagsordenspunkter fra FirstAgenda`);
 
-    // Tjek for duplikater (baseret på ID i kolonne F)
-    const existingIds = new Set();
-    const allData = sheet.getDataRange().getValues();
-    for (let i = 1; i < allData.length; i++) {
-      existingIds.add(String(allData[i][5]));
-    }
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, newRows.length, newRows[0].length).setValues(newRows);
 
-    const uniqueRows = newRows.filter(row => !existingIds.has(String(row[5])));
-    console.log(`   📊 ${uniqueRows.length} nye (${newRows.length - uniqueRows.length} duplikater sprunget over)`);
-
-    if (uniqueRows.length > 0) {
-      const startRow = sheet.getLastRow() + 1;
-      sheet.getRange(startRow, 1, uniqueRows.length, uniqueRows[0].length).setValues(uniqueRows);
-
-      // Analyser med Gemini
-      analyzeNewRows_(sheet, startRow, uniqueRows.length);
-
-      // Gem tidsstempel
-      const maxMs = Math.max(...newRows.map(r => new Date(r[0]).getTime()));
-      props.setProperty("LAST_FA_PROCESSED_MS", String(maxMs));
-    }
+    // Analyser med Gemini
+    analyzeNewRows_(sheet, startRow, newRows.length);
   } else {
     console.log("\nℹ️ Ingen nye dagsordenspunkter fra FirstAgenda");
   }
@@ -557,49 +618,6 @@ function fetchMeetingAgenda_(cookies, meetingId) {
 }
 
 /**
- * Returnerer kommende møder (ikke afsluttede) inden for de næste
- * `daysAhead` dage, sorteret efter dato.
- *
- * Bruges af generateWeeklyDraft() til at bygge kalender-sektionen
- * for NÆSTE uge — ikke den uge der lige er gået.
- */
-function fetchUpcomingMeetings_(daysAhead) {
-  try {
-    const cookies = authenticateFirstAgenda_();
-    const committees = fetchCommitteeList_(cookies);
-
-    const now   = new Date();
-    const limit = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-
-    const upcoming = [];
-    for (const committee of committees) {
-      for (const m of committee.meetings) {
-        if (!m.Dato) continue;
-        const d = new Date(m.Dato);
-        if (isNaN(d.getTime())) continue;
-        if (d < now) continue;       // ikke fortid
-        if (d > limit) continue;      // ikke længere ude end vinduet
-        if (m.Afsluttet) continue;    // referat allerede lagt ud = mødet er slut
-
-        upcoming.push({
-          committee: committee.name,
-          name:      m.Navn || "Møde",
-          date:      d,
-          meetingId: m.Id
-        });
-      }
-    }
-
-    upcoming.sort((a, b) => a.date - b.date);
-    console.log(`   📅 ${upcoming.length} kommende møder inden for ${daysAhead} dage`);
-    return upcoming;
-  } catch (e) {
-    console.log(`   ⚠️ Kunne ikke hente kommende møder: ${e.message}`);
-    return [];
-  }
-}
-
-/**
  * Udtrækker læsbar tekst fra et dagsordenspunkt
  * API'en returnerer HTML i Felter[].Html med beslutninger, indstillinger, sagsbeskrivelser
  */
@@ -643,7 +661,7 @@ function extractContentFromAgendaItem_(item) {
  * FirstAgenda-rækker: genhentes via API (frisk fra kilden).
  * Gmail-rækker: bruger sheetets snippet som fallback, flagget som "gmail".
  */
-function collectGroundTruth_(stories) {
+function collectGroundTruth_(stories, existingCookies) {
   const groundTruth = [];
   const meetingMap  = {};
 
@@ -669,7 +687,7 @@ function collectGroundTruth_(stories) {
 
   if (Object.keys(meetingMap).length > 0) {
     try {
-      const cookies = authenticateFirstAgenda_();
+      const cookies = existingCookies || authenticateFirstAgenda_();
 
       for (const [meetingId, meetingStories] of Object.entries(meetingMap)) {
         console.log(`   🔄 Genhenter møde ${meetingId} fra FirstAgenda...`);
@@ -765,13 +783,26 @@ function ingestInboxEmails() {
   }
 
   if (newRows.length > 0) {
-    console.log(`✅ Behandler ${newRows.length} nye beskeder`);
+    // Dedup på message-ID (kolonne F) — beskytter mod dobbelt-indsættelse
+    // hvis et tidligere run fejlede før LAST_PROCESSED_MS blev gemt
+    const existingIds = new Set();
+    const allData = sheet.getDataRange().getValues();
+    for (let i = 1; i < allData.length; i++) {
+      existingIds.add(String(allData[i][5]));
+    }
+    const uniqueRows = newRows.filter(row => !existingIds.has(String(row[5])));
 
-    const startRow = sheet.getLastRow() + 1;
-    sheet.getRange(startRow, 1, newRows.length, newRows[0].length).setValues(newRows);
+    if (uniqueRows.length > 0) {
+      console.log(`✅ Behandler ${uniqueRows.length} nye beskeder (${newRows.length - uniqueRows.length} duplikater sprunget over)`);
 
-    // Analyser de nye rækker
-    analyzeNewRows_(sheet, startRow, newRows.length);
+      const startRow = sheet.getLastRow() + 1;
+      sheet.getRange(startRow, 1, uniqueRows.length, uniqueRows[0].length).setValues(uniqueRows);
+
+      // Analyser de nye rækker
+      analyzeNewRows_(sheet, startRow, uniqueRows.length);
+    } else {
+      console.log("ℹ️ Alle beskeder var allerede i arket");
+    }
 
     props.setProperty("LAST_PROCESSED_MS", String(newestMs));
   } else {
@@ -1082,8 +1113,8 @@ function extractTextFromHtml_(html) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&#\d+;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/\n\s*\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
     .trim();
 
   return text.slice(0, 100000); // Max 100k tegn
@@ -1450,6 +1481,7 @@ ${truncated}
     if (!text) throw new Error("Tomt svar fra Gemini");
 
     const result = JSON.parse(text);
+    result.claims = result.claims || [];
     if (!result.summary) {
       result.summary = {
         verified:     result.claims.filter(c => c.verdict === "verified").length,
@@ -1589,10 +1621,33 @@ function generateWeeklyDraft() {
   console.log(`  📌 Mellem-sager: ${mediumStories.length}`);
   console.log(`  📁 Administrative: ${adminItems.length}`);
 
-  // Hent NÆSTE uges møder til kalender-sektionen
-  // (9 dage = hele næste kalenderuge, uanset hvilken ugedag robotten kører)
-  console.log("📅 Henter kommende møder...");
-  const upcomingMeetings = fetchUpcomingMeetings_(9);
+  // Én samlet FirstAgenda-auth til både kalender og fakta-tjek
+  console.log("🔑 Autenticerer mod FirstAgenda (én gang)...");
+  let faCookies = null;
+  let upcomingMeetings = [];
+  try {
+    faCookies = authenticateFirstAgenda_();
+    const committees = fetchCommitteeList_(faCookies);
+
+    const limit = new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000);
+    for (const committee of committees) {
+      for (const m of committee.meetings) {
+        if (!m.Dato) continue;
+        const d = new Date(m.Dato);
+        if (isNaN(d.getTime()) || d < now || d > limit || m.Afsluttet) continue;
+        upcomingMeetings.push({
+          committee: committee.name,
+          name: m.Navn || "Møde",
+          date: d,
+          meetingId: m.Id
+        });
+      }
+    }
+    upcomingMeetings.sort((a, b) => a.date - b.date);
+    console.log(`   📅 ${upcomingMeetings.length} kommende møder`);
+  } catch (e) {
+    console.log(`   ⚠️ FirstAgenda fejl: ${e.message} — fortsætter uden kalender`);
+  }
 
   // Generer nyhedsbrev
   const dateRange = formatDateRange_(weekAgo, now);
@@ -1604,10 +1659,37 @@ function generateWeeklyDraft() {
     upcomingMeetings
   });
 
-  // Fakta-tjek mod dagsordener.middelfart.dk
+  if (!draftText) {
+    GmailApp.sendEmail(
+      Session.getEffectiveUser().getEmail(),
+      "❌ SF Nyhedsbrev kunne IKKE genereres",
+      "Hej Maja!\n\nGemini-kaldet fejlede, så der blev ikke oprettet nogen kladde denne gang.\n"
+      + "Tjek loggen i Apps Script (Udførelser) for detaljer, og kør testGenerateNewsletter() igen.\n\n"
+      + "/Din SF Presse-Robot v8.0 🤖"
+    );
+    throw new Error("Nyhedsbrev-generering fejlede — se loggen for detaljer");
+  }
+
+  // Fakta-tjek mod dagsordener.middelfart.dk (genbruger cookies fra ovenfor)
   console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
-  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories]);
-  const factCheck   = factCheckNewsletter_(apiKey, draftText, groundTruth);
+  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories], faCookies);
+
+  // Tilføj kommende møder som ground truth så fakta-tjekket kan
+  // verificere kalender-sektionen (i stedet for at flagge dem som uverificerede)
+  const tz = Session.getScriptTimeZone();
+  for (const m of upcomingMeetings) {
+    const day  = Utilities.formatDate(m.date, tz, "EEEE d. MMMM");
+    const time = Utilities.formatDate(m.date, tz, "HH:mm");
+    groundTruth.push({
+      committee:  m.committee,
+      subject:    `Kommende møde: ${m.name}`,
+      sourceUrl:  "",
+      sourceType: "kalender",
+      freshText:  `${m.committee} holder møde ${day} kl. ${time} (${m.name}).`
+    });
+  }
+
+  const factCheck = factCheckNewsletter_(apiKey, draftText, groundTruth);
 
   const fc = factCheck.summary;
   console.log(`   ✅ Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`);
@@ -1648,7 +1730,7 @@ function generateWeeklyDraft() {
 }
 
 /**
- * Genererer nyhedsbrev-tekst med Gemini i Pias personlige SF-stemme.
+ * Genererer nyhedsbrev-tekst med Gemini i SF Middelfarts kollektive stemme.
  * Tonen hentes live fra stilguide.md via loadToneGuide_() — med
  * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
@@ -1658,7 +1740,7 @@ function generateNewsletterWithGemini_(apiKey, data) {
   const weekNum = Utilities.formatDate(now, tz, "w");
   const year = Utilities.formatDate(now, tz, "yyyy");
 
-  // Kalender-blok fra fetchUpcomingMeetings_ — formateret på dansk
+  // Kalender-blok med kommende møder — formateret på dansk
   const upcoming = data.upcomingMeetings || [];
   const calendarBlock = upcoming.length > 0
     ? upcoming.map(m => {
@@ -1670,6 +1752,12 @@ function generateNewsletterWithGemini_(apiKey, data) {
 
   // Hent den aktuelle stilguide (live fra GitHub, ellers fallback-konstant)
   const toneGuide = loadToneGuide_();
+
+  // Udtræk nøgletal fra top- og mellemsager til faktaboks
+  const allAmounts = [...(data.topStories || []), ...(data.mediumStories || [])]
+    .filter(i => i.amounts && String(i.amounts).trim())
+    .map(i => `${i.subject}: ${i.amounts}`)
+    .join("\n");
 
   const prompt = `
 Du skriver SF Middelfarts ugentlige nyhedsbrev. Afsenderen er SF Middelfart
@@ -1693,16 +1781,24 @@ SF MIDDELFARTS MÆRKESAGER (brug som VÆRDI-RAMME, ikke opremsning):
 4. Lighed: Plads til alle, fritidspas, bekæmpelse af ulighed
 
 ════════════════════════════════════════
-ABSOLUTTE ANTI-HALLUCINATIONS-REGLER
+ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
 ════════════════════════════════════════
-* Skriv KUN om sager der fremgår af DATA-sektionen nedenfor.
-* INGEN opdigtede citater, holdninger eller hændelser — heller ikke når du
-  forsøger at ramme SF-tonen. Følelser er tilladt, facts er ikke.
-* Brug KONKRETE tal og fakta fra data (beløb, procenter, datoer, navne).
-* FAKTABOKSEN må KUN indeholde tal fra data nedenfor. Digt ikke tal op.
+* DU MÅ KUN BRUGE FAKTA, TAL, DATOER, NAVNE OG BEGIVENHEDER DER STÅR
+  I DATA-SEKTIONEN NEDENFOR. Alt andet er FORBUDT.
+* INGEN opdigtede citater, holdninger, hændelser, statistikker, årstal
+  eller facts fra din egen viden — heller ikke når du forsøger at ramme
+  SF-tonen. Du må IKKE supplere med viden om systemer, organisationer
+  eller historik der IKKE fremgår af data.
+* Følelser og SF-værdier er tilladt. Konkrete facts er KUN tilladt hvis
+  de kommer direkte fra DATA-sektionen.
+* FAKTABOKSEN må KUN indeholde tal fra DATA. Hvis der er færre end 3
+  nøgletal i data, så skriv kun dem der er. Digt ALDRIG tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
-  Tilføj ALDRIG andre datoer. Hvis listen er tom, så sig det ærligt.
-* Hvis ugen er stille, så sig det ærligt i SF-stemme — digt IKKE sager op.
+  Tilføj ALDRIG andre møder eller datoer. Hvis listen er tom, så sig det.
+* STILLE UGE: Hvis der er få sager, skriv et kortere nyhedsbrev med
+  ægte SF-refleksioner og værdier — men digt IKKE sager eller fakta op
+  for at fylde ud. Et ærligt kort nyhedsbrev er bedre end et langt med
+  opdigtede facts.
 
 ════════════════════════════════════════
 DATA — UGENS SAGER (${data.dateRange})
@@ -1742,7 +1838,8 @@ Fanger essensen af ugens vigtigste sag. Fed skrift (**overskrift**).
 Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
 --- SEKTION 3: HOVEDTEKST ---
-2-3 tematiske blokke med **fed mellemrubrik** for hver. Hvert tema:
+1-3 tematiske blokke med **fed mellemrubrik** for hver (tilpas antal
+til mængden af data — skriv færre blokke hvis der er få sager). Hvert tema:
 - Start med en følelse, en refleksion, et retorisk spørgsmål —
   noget MENNESKELIGT. ALDRIG med tal eller opremsning.
 - DEREFTER: konkrete tal fra data, pakket ind i værdier.
@@ -1753,19 +1850,23 @@ Eksempel: **Når tallene skinner, mens velfærden slår revner 💔💚**
 
 --- SEKTION 4: LIDT AF HVERT FRA UGEN ---
 Overskrift: **Lidt af hvert fra ugen**
-3-5 punkter fra mellem-sagerne. Hver med:
+1-5 punkter fra mellem-sagerne (tilpas antal til hvad der rent faktisk
+er i data — spring sektionen HELT OVER hvis der er 0 mellem-sager).
+Hver med:
 emoji + **fed titel** + bindestreg + 1-2 sætninger med emotionel indramning.
 Eksempel: 🌳 **Naturtalenter** — Der er startet et 12-ugers forløb for
 5. klasser, der mistrives. Naturen kan noget helt særligt!
 
 --- SEKTION 5: FAKTABOKS ---
 Overskrift: **Ugens nøgletal**
-4-7 punkter med nøgletal direkte fra DATA. Format:
+Nøgletal direkte fra DATA. Format:
 emoji + tal + bindestreg + kort forklaring
 Eksempel:
 - 💰 212,4 mio. kr. — overskud på kommunens drift
 - ⚖️ 3 ud af 5 — handicapsager med retlige mangler
 KUN tal der findes i DATA-sektionen ovenfor. Digt ALDRIG tal op.
+Hvis der er færre end 3 nøgletal, skriv kun dem der er.
+Hvis der er 0 nøgletal, spring sektionen HELT OVER.
 
 --- SEKTION 6: FOOTER — KOMMENDE UDVALGSMØDER ---
 Overskrift: **Vi holder øje med næste uge:**
@@ -1810,7 +1911,7 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 4000
+        maxOutputTokens: 16384
       }
     };
 
@@ -1824,14 +1925,28 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 
     const json = JSON.parse(response.getContentText());
 
-    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-      return json.candidates[0].content.parts[0].text;
+    const candidate = json.candidates?.[0];
+    if (candidate) {
+      const finishReason = candidate.finishReason || "UNKNOWN";
+      if (finishReason !== "STOP") {
+        console.log(`⚠️ Gemini stoppede med finishReason: ${finishReason} (forventet: STOP)`);
+      }
+      const text = candidate.content?.parts?.[0]?.text;
+      if (text) {
+        if (!text.includes("SEKTION 7") && !text.includes("De bedste hilsner")) {
+          console.log("⚠️ Nyhedsbrevet ser ufuldstændigt ud — mangler SEKTION 7 / afslutning");
+        }
+        return text;
+      }
+    }
+    if (json.error) {
+      console.log(`❌ Gemini API-fejl: ${json.error.message || JSON.stringify(json.error)}`);
     }
   } catch (e) {
     console.log(`❌ Fejl ved nyhedsbrev-generering: ${e.message}`);
   }
 
-  return "Fejl ved generering af nyhedsbrev. Tjek loggen for detaljer.";
+  return null;
 }
 
 /**
@@ -1849,10 +1964,7 @@ function createDraftDocument_(folderId, content, dateRange, factCheck) {
 
   body.setText(fullContent);
 
-  const file   = DriveApp.getFileById(doc.getId());
-  const folder = DriveApp.getFolderById(folderId);
-  folder.addFile(file);
-  DriveApp.getRootFolder().removeFile(file);
+  DriveApp.getFileById(doc.getId()).moveTo(DriveApp.getFolderById(folderId));
 
   return doc.getUrl();
 }
@@ -2113,11 +2225,12 @@ function debugCheckSheet() {
     console.log("📋 Ark i spreadsheet:");
     sheets.forEach(s => console.log("   -", `"${s.getName()}"`));
 
-    const inbox = ss.getSheetByName("Inbox");
+    const sheetName = props.getProperty(CFG.P_SHEET_NAME) || "Inbox";
+    const inbox = ss.getSheetByName(sheetName);
     if (inbox) {
-      console.log("✅ 'Inbox' ark fundet!");
+      console.log(`✅ '${sheetName}' ark fundet!`);
     } else {
-      console.log("❌ 'Inbox' ark IKKE fundet!");
+      console.log(`❌ '${sheetName}' ark IKKE fundet!`);
     }
   } catch (e) {
     console.log("❌ Fejl:", e.message);
