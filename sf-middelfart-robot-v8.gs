@@ -98,6 +98,31 @@ const CFG = {
   ]
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   TIDSBUDGET — Apps Script dræber hårdt ved 6 minutter (360 sekunder)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// Forankret i EKSEKVERINGEN, ikke i den enkelte funktion: dailyIngest kalder
+// analyzeNewRows_ to gange, og et lokalt ur pr. funktion ville nominelt
+// tillade 9+ minutter. Top-level const evalueres én gang pr. eksekvering.
+const EXEC_START_MS   = Date.now();
+const EXEC_BUDGET_MS  = 300 * 1000;   // 300 s arbejdsbudget → 60 s hård margin
+const WORST_FETCH_MS  =  70 * 1000;   // konservativt loft for ÉT UrlFetch-kald
+const TAIL_RESERVE_MS =  30 * 1000;   // opdatering af dokument + mail
+const DOC_RESERVE_MS  =  45 * 1000;   // oprettelse af dokument + mail
+
+function msLeft_()    { return EXEC_BUDGET_MS - (Date.now() - EXEC_START_MS); }
+function timeFor_(ms) { return msLeft_() >= ms; }
+function secsLeft_()  { return Math.max(0, Math.round(msLeft_() / 1000)); }
+
+/** Sover kun hvis budgettet rummer BÅDE pausen og endnu et fuldt forsøg. */
+function sleepIfTime_(ms, reserveMs) {
+  const wait = ms || 0;
+  if (!timeFor_(wait + WORST_FETCH_MS + (reserveMs || 0))) return false;
+  Utilities.sleep(wait);
+  return true;
+}
+
 /**
  * SF Nyhedsbrevs-tone — FALLBACK.
  *
@@ -213,6 +238,14 @@ function setupOnce_createTriggers() {
     .atHour(12)
     .create();
 
+  // Daglig efteranalyse kl. 14:00 — reparerer rækker uden analyse i sit
+  // EGET 6-minutters vindue, så den ikke konkurrerer med indsamlingen
+  ScriptApp.newTrigger("dailyRepairAnalyses")
+    .timeBased()
+    .everyDays(1)
+    .atHour(14)
+    .create();
+
   // Ugentligt nyhedsbrev lørdag kl. 13:00
   ScriptApp.newTrigger("generateWeeklyDraft")
     .timeBased()
@@ -222,6 +255,7 @@ function setupOnce_createTriggers() {
 
   console.log("✅ v8.0 Presse-Robot er klar!");
   console.log("📡 Daglig indsamling: Hver dag kl. 12:00 (FirstAgenda API + email)");
+  console.log("🔧 Daglig efteranalyse: Hver dag kl. 14:00 (reparerer manglende analyser)");
   console.log("📰 Ugentligt nyhedsbrev: Lørdag kl. 13:00");
 }
 
@@ -275,9 +309,6 @@ function testGenerateNewsletter() {
  * Kør denne FLERE gange indtil den siger "Alle rækker er færdige".
  */
 function reanalyzeAllRows() {
-  const MAX_RUNTIME_MS = 5 * 60 * 1000;  // Stop efter 5 min (sikkerhedsmargin)
-  const startTime = Date.now();
-
   const props   = PropertiesService.getScriptProperties();
   const apiKey  = mustGet_(props, CFG.P_API_KEY);
   const ss      = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
@@ -302,12 +333,12 @@ function reanalyzeAllRows() {
   }
 
   let reanalyzed = 0;
-  let lastProcessed = startFrom;
+  let consecutiveFails = 0;
 
   for (let i = startFrom; i < all.length; i++) {
-    // Tjek om vi nærmer os timeout
-    if (Date.now() - startTime > MAX_RUNTIME_MS) {
-      console.log(`\n⏱️ Timeout nærmer sig — gemmer progress ved række ${i}`);
+    // Start ikke en række der ikke kan nå at blive færdig inden 6-min-grænsen
+    if (!timeFor_(WORST_FETCH_MS + 10 * 1000)) {
+      console.log(`\n⏱️ Tidsbudget opbrugt — gemmer progress ved række ${i}`);
       props.setProperty("REANALYZE_PROGRESS", String(i));
       console.log(`   Kør reanalyzeAllRows() igen for at fortsætte (${i - 1}/${total} færdige)`);
       return;
@@ -319,8 +350,7 @@ function reanalyzeAllRows() {
 
     // Spring rene formalia over
     if (isAdministrativeSubject_(subject)) {
-      sheet.getRange(i + 1, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
-      lastProcessed = i + 1;
+      writeFormaliaRow_(sheet, i + 1);
       continue;
     }
 
@@ -334,22 +364,26 @@ function reanalyzeAllRows() {
         pdfBase64: null
       });
 
-      sheet.getRange(i + 1, 10, 1, 6).setValues([[
-        analysis.tldr         || "Kunne ikke analyseres",
-        analysis.sfAnalysis   || "",
-        analysis.facts        || "",
-        analysis.amounts      || "",
-        analysis.score        || 3,
-        analysis.programMatch || ""
-      ]]);
+      // Dette er reparationsværktøjet — det må ALDRIG selv overskrive
+      // en god analyse med en fejl-score.
+      if (!analysis.ok) {
+        consecutiveFails++;
+        console.log(`   ⚠️ Beholder eksisterende analyse — Gemini fejlede (${consecutiveFails} i træk)`);
+        if (consecutiveFails >= 5) {
+          props.setProperty("REANALYZE_PROGRESS", String(i));
+          console.log(`\n⛔ 5 fejl i træk — Gemini er sandsynligvis nede. Stopper og gemmer progress.`);
+          return;
+        }
+        continue;   // rør IKKE J-O
+      }
 
+      consecutiveFails = 0;
+      writeAnalysisRow_(sheet, i + 1, analysis);
       reanalyzed++;
       Utilities.sleep(500);  // Rate limiting
     } catch (e) {
       console.log(`   ❌ Fejl: ${e.message}`);
     }
-
-    lastProcessed = i + 1;
   }
 
   // Alle rækker er færdige
@@ -409,6 +443,13 @@ function ingestFromFirstAgendaApi() {
 
       // Spring møder over der er ældre end indsamlingsvinduet
       if (meetingDate < cutoff) continue;
+
+      // Møde-løkken laver ét netværkskald pr. møde. Uden vagt kan den bruge
+      // hele budgettet, så analysen bagefter aldrig når at køre.
+      if (!timeFor_(WORST_FETCH_MS + 60 * 1000)) {
+        console.log(`   ⏱️ Tidsbudget opbrugt — resterende møder hentes i næste kørsel`);
+        break;
+      }
 
       console.log(`\n📋 ${committee.name}: ${meeting.Navn || "Møde"} (${String(meeting.Dato).slice(0,10)})`);
 
@@ -475,12 +516,19 @@ function ingestFromFirstAgendaApi() {
     const apiKey = mustGet_(props, CFG.P_API_KEY);
 
     for (const upd of referatUpdates) {
+      // Tjek tiden FØR B sættes til "Referat" — ellers står rækken som
+      // færdigbehandlet uden at være analyseret, og fanges aldrig igen.
+      if (!timeFor_(WORST_FETCH_MS + 20 * 1000)) {
+        console.log(`   ⏱️ Tidsbudget opbrugt — resten af referat-opdateringerne tages i næste kørsel`);
+        break;
+      }
+
       console.log(`   📋 ${upd.subject}`);
       sheet.getRange(upd.sheetRow, 2).setValue("Referat");                    // B: Type
       sheet.getRange(upd.sheetRow, 8).setValue(upd.content.slice(0, 8000));   // H: Snippet
 
       if (isAdministrativeSubject_(upd.subject)) {
-        sheet.getRange(upd.sheetRow, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
+        writeFormaliaRow_(sheet, upd.sheetRow);
         continue;
       }
 
@@ -491,14 +539,14 @@ function ingestFromFirstAgendaApi() {
           content:   upd.content,
           pdfBase64: null
         });
-        sheet.getRange(upd.sheetRow, 10, 1, 6).setValues([[
-          analysis.tldr         || "Kunne ikke analyseres",
-          analysis.sfAnalysis   || "",
-          analysis.facts        || "",
-          analysis.amounts      || "",
-          analysis.score        || 3,
-          analysis.programMatch || ""
-        ]]);
+        if (analysis.ok) {
+          writeAnalysisRow_(sheet, upd.sheetRow, analysis);
+        } else {
+          // H er nu referat-tekst; den gamle dagsorden-analyse må ikke blive
+          // stående oven på den. Ryd J-O → rækken efteranalyseres.
+          clearAnalysisRow_(sheet, upd.sheetRow);
+          console.log(`   ↻ Analyse fejlede — J-O ryddet, rækken efteranalyseres`);
+        }
       } catch (e) {
         console.log(`   ❌ Fejl ved re-analyse: ${e.message}`);
       }
@@ -690,6 +738,22 @@ function collectGroundTruth_(stories, existingCookies) {
       const cookies = existingCookies || authenticateFirstAgenda_();
 
       for (const [meetingId, meetingStories] of Object.entries(meetingMap)) {
+        // Uden denne vagt kunne løkken lave ubegrænset mange netværkskald og
+        // dræbe kørslen efter at kladden var gemt, men før fakta-tjekket.
+        if (!timeFor_(WORST_FETCH_MS + TAIL_RESERVE_MS)) {
+          console.log(`   ⏱️ Tidsbudget opbrugt — resterende møder bruger cached tekst`);
+          for (const story of meetingStories) {
+            groundTruth.push({
+              committee:  story.committee,
+              subject:    story.subject,
+              sourceUrl:  story.sourceUrl || "",
+              sourceType: "firstagenda-cached",
+              freshText:  story.snippet || story.tldr || ""
+            });
+          }
+          continue;
+        }
+
         console.log(`   🔄 Genhenter møde ${meetingId} fra FirstAgenda...`);
         const agendaItems = fetchMeetingAgenda_(cookies, meetingId);
 
@@ -1133,30 +1197,33 @@ function analyzeNewRows_(sheet, startRow, numRows) {
   const props  = PropertiesService.getScriptProperties();
   const apiKey = mustGet_(props, CFG.P_API_KEY);
   const values = sheet.getRange(startRow, 1, numRows, 15).getValues();
-  const updates = [];
+
+  // Skriver pr. række (ikke samlet til sidst): rammer vi 6-minutters
+  // grænsen midt i løkken, er alt forudgående arbejde stadig gemt.
+  const PER_ROW_MS = WORST_FETCH_MS + 10 * 1000;
+  let ok = 0, failed = 0, notReached = 0;
 
   for (let i = 0; i < values.length; i++) {
-    const row            = values[i];
-    const subject        = row[3];  // D: Emne
-    const urls           = (row[6] || "").split(",").map(s => s.trim()).filter(Boolean);
-    const snippet        = row[7];  // H: Snippet
-    const attachmentInfo = row[8];  // I: Vedhæftninger
+    if (!timeFor_(PER_ROW_MS)) {
+      notReached = values.length - i;
+      console.log(`\n⏱️ Tidsbudget opbrugt ved række ${i + 1}/${numRows} — `
+        + `${notReached} rækker står med tom analyse og tages i næste kørsel`);
+      break;
+    }
+
+    const row      = values[i];
+    const subject  = row[3];  // D: Emne
+    const urls     = (row[6] || "").split(",").map(s => s.trim()).filter(Boolean);
+    const snippet  = row[7];  // H: Snippet
+    const from     = row[4];  // E: Fra
+    const sheetRow = startRow + i;
 
     console.log(`\n📋 Analyserer: ${subject}`);
-
-    const from = row[4];  // E: Fra
 
     // TRIN 1: Check om det er rent administrativt (kun baseret på emne)
     if (isAdministrativeSubject_(subject)) {
       console.log(`   ⏭️ Sprunget over (formalia)`);
-      updates.push([
-        "Formalia/procedurepunkt",
-        "",
-        "",
-        "",
-        1,
-        ""
-      ]);
+      writeFormaliaRow_(sheet, sheetRow);
       continue;
     }
 
@@ -1191,22 +1258,98 @@ function analyzeNewRows_(sheet, startRow, numRows) {
       pdfBase64: pdfBase64
     });
 
-    updates.push([
-      analysis.tldr         || "Kunne ikke analyseres",
-      analysis.sfAnalysis   || "",
-      analysis.facts        || "",
-      analysis.amounts      || "",
-      analysis.score        || 3,
-      analysis.programMatch || ""
-    ]);
+    if (!analysis.ok) {
+      failed++;
+      console.log(`   ↻ Analyse fejlede — J-O forbliver tom, rækken prøves igen næste kørsel`);
+      continue;   // skriv INTET — en fejl må ikke blive til score 1
+    }
+
+    writeAnalysisRow_(sheet, sheetRow, analysis);
+    ok++;
 
     // Lille pause for at undgå rate limiting
     Utilities.sleep(500);
   }
 
-  // Opdater sheet med analyseresultater
-  sheet.getRange(startRow, 10, updates.length, 6).setValues(updates);
-  console.log(`\n✅ Analyse færdig!`);
+  console.log(`\n✅ Analyse: ${ok} færdige · ${failed} fejlede · ${notReached} ikke nået`);
+  if (failed + notReached > 0) {
+    console.log(`   ↻ ${failed + notReached} rækker afventer — dailyRepairAnalyses() tager dem`);
+  }
+}
+
+/**
+ * Samler rækker op der aldrig blev analyseret (tom kolonne N) — fx fordi en
+ * tidligere kørsel ramte 6-minutters grænsen, eller Gemini var utilgængelig.
+ * Skriver pr. række og respekterer det fælles tidsbudget.
+ * Returnerer antal rækker der stadig venter.
+ */
+function analyzePendingRows_(sheet, reserveMs) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  const props  = PropertiesService.getScriptProperties();
+  const apiKey = mustGet_(props, CFG.P_API_KEY);
+  const data   = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  const PER_ROW_MS = WORST_FETCH_MS + 10 * 1000;
+
+  let fixed = 0, stillPending = 0;
+
+  // Fejl-markører skrevet af den GAMLE kode, som satte score 1 ved API-fejl.
+  // Ægte formalia hedder "Formalia/procedurepunkt" og røres ikke.
+  const FEJL_MARKOERER = ["analyse fejlede", "kunne ikke analyseres"];
+
+  for (let i = 0; i < data.length; i++) {
+    const score = String(data[i][13]).trim();
+    const tldr  = String(data[i][9]).trim().toLowerCase();
+    const erForgiftet = FEJL_MARKOERER.indexOf(tldr) !== -1;
+
+    if (score !== "" && !erForgiftet) continue;   // ægte analyse — lad den være
+    if (!timeFor_(PER_ROW_MS + (reserveMs || 0))) { stillPending++; continue; }
+
+    const subject  = data[i][3];
+    const sheetRow = i + 2;
+
+    if (isAdministrativeSubject_(subject)) {
+      writeFormaliaRow_(sheet, sheetRow);
+      fixed++;
+      continue;
+    }
+
+    console.log(`   🔧 Efteranalyserer: ${subject}`);
+    const analysis = analyzeWithGemini_(apiKey, {
+      subject: subject, committee: data[i][2], content: data[i][7], pdfBase64: null
+    });
+    if (!analysis.ok) { stillPending++; continue; }
+
+    writeAnalysisRow_(sheet, sheetRow, analysis);
+    fixed++;
+    Utilities.sleep(500);
+  }
+
+  if (fixed || stillPending) {
+    console.log(`   ↻ Efteranalyse: ${fixed} rækker repareret · ${stillPending} venter stadig`);
+  }
+  return stillPending;
+}
+
+/**
+ * Daglig reparation: analyserer rækker med tom score. Kører i sit EGET
+ * 6-minutters vindue, så den aldrig konkurrerer med indsamlingen.
+ * Kan også køres manuelt for at reparere rækker efter et Gemini-udfald.
+ */
+function dailyRepairAnalyses() {
+  console.log("🔧 Efteranalyse af rækker uden analyse...\n");
+  const props = PropertiesService.getScriptProperties();
+  const ss    = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
+  const sheetName = props.getProperty(CFG.P_SHEET_NAME) || "Inbox";
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    throw new Error(`❌ Ark '${sheetName}' findes ikke!`);
+  }
+  const left  = analyzePendingRows_(sheet, 0);
+  console.log(left > 0
+    ? `\n⏱️ ${left} rækker venter stadig — de tages i morgen (eller kør igen nu)`
+    : "\n✅ Alle rækker er analyseret");
 }
 
 /**
@@ -1216,25 +1359,47 @@ function analyzeWithGemini_(apiKey, data) {
   const prompt = buildAnalysisPrompt_(data);
 
   try {
-    let response;
-
-    if (data.pdfBase64) {
-      // Send PDF til Gemini
-      response = callGeminiWithPdf_(apiKey, prompt, data.pdfBase64);
-    } else {
-      // Send tekst til Gemini
-      response = callGeminiJson_(apiKey, prompt);
-    }
+    const response = data.pdfBase64
+      ? callGeminiWithPdf_(apiKey, prompt, data.pdfBase64)
+      : callGeminiJson_(apiKey, prompt);
 
     const parsed = parseJsonSafe_(response);
     if (parsed) {
+      const n = Number(parsed.score);
+      parsed.score = (n >= 1 && n <= 5) ? n : 3;   // ugyldig/manglende score → 3
+      parsed.ok = true;                             // sættes EFTER, så modellen ikke kan overskrive
       return parsed;
     }
+    console.log(`  ❌ Gemini returnerede ikke-parsbar JSON: ${data.subject}`);
   } catch (e) {
-    console.log(`  ❌ Gemini fejl: ${e.message}`);
+    console.log(`  ❌ Gemini fejl (${data.subject}): ${e.message}`);
   }
 
-  return { tldr: "Analyse fejlede", score: 1 };
+  // ALDRIG score 1: en netværksfejl er ikke en redaktionel vurdering.
+  // Kalderen lader J-O stå tom, så rækken samles op af dailyRepairAnalyses().
+  return { ok: false };
+}
+
+/** Skriver analyse-resultatet i kolonne J-O for én række. */
+function writeAnalysisRow_(sheet, sheetRow, analysis) {
+  sheet.getRange(sheetRow, 10, 1, 6).setValues([[
+    analysis.tldr         || "Kunne ikke analyseres",
+    analysis.sfAnalysis   || "",
+    analysis.facts        || "",
+    analysis.amounts      || "",
+    analysis.score        || 3,
+    analysis.programMatch || ""
+  ]]);
+}
+
+/** Markerer en række som ren formalia (score 1). */
+function writeFormaliaRow_(sheet, sheetRow) {
+  sheet.getRange(sheetRow, 10, 1, 6).setValues([["Formalia/procedurepunkt", "", "", "", 1, ""]]);
+}
+
+/** Rydder J-O, så rækken tælles som "ikke analyseret" og samles op senere. */
+function clearAnalysisRow_(sheet, sheetRow) {
+  sheet.getRange(sheetRow, 10, 1, 6).setValues([["", "", "", "", "", ""]]);
 }
 
 /**
@@ -1281,19 +1446,23 @@ Returner KUN valid JSON, ingen anden tekst.
 }
 
 /**
- * Kalder Gemini API med tekst (med retry ved fejl)
+ * Fælles Gemini-kald for HELE robotten: HTTP-kodetjek, retry ved
+ * midlertidige fejl, netværks-exceptions tælles som forsøg, og hårdt
+ * tidsbudget så retry aldrig kan sprænge Apps Scripts 6-minutters grænse.
+ *
+ * Returnerer { text, finishReason, code }. Kaster ved endelig fejl —
+ * kalderen bestemmer selv om den vil degradere blødt.
+ *
+ * opts: { label, maxAttempts (default 3), reserveMs (default 0) }
  */
-function callGeminiJson_(apiKey, prompt) {
+function geminiFetch_(apiKey, payload, opts) {
+  opts = opts || {};
+  const label       = opts.label || "Gemini";
+  const maxAttempts = opts.maxAttempts || 3;
+  const reserveMs   = opts.reserveMs || 0;
+  const waits       = [3000, 6000, 6000];   // bundet backoff, maks ~15 s i alt
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
-
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.2
-    }
-  };
-
   const options = {
     method: "post",
     contentType: "application/json",
@@ -1302,34 +1471,88 @@ function callGeminiJson_(apiKey, prompt) {
     muteHttpExceptions: true
   };
 
-  // Retry op til 2 gange ved midlertidige fejl
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = UrlFetchApp.fetch(url, options);
-    const code = response.getResponseCode();
+  let lastErr = null;
 
-    if (code === 429 || code >= 500) {
-      console.log(`  ⚠️ API fejl ${code}, forsøg ${attempt + 1}/3...`);
-      if (attempt < 2) { Utilities.sleep(2000 * (attempt + 1)); continue; }
-      throw new Error(`API fejl ${code} efter 3 forsøg`);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Start ALDRIG et forsøg der ikke kan nå at blive færdigt inden grænsen
+    if (!timeFor_(WORST_FETCH_MS + reserveMs)) {
+      console.log(`   ⏱️ ${label}: dropper forsøg ${attempt + 1} — kun ${secsLeft_()} s tilbage af tidsbudgettet`);
+      break;
     }
 
-    const json = JSON.parse(response.getContentText());
-
-    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-      return json.candidates[0].content.parts[0].text;
+    let code = 0, body = "";
+    try {
+      const response = UrlFetchApp.fetch(url, options);
+      code = response.getResponseCode();
+      body = response.getContentText();
+    } catch (e) {
+      // DNS-, SSL- og timeout-fejl dæmpes IKKE af muteHttpExceptions
+      lastErr = new Error(`${label}: netværksfejl — ${e.message}`);
+      console.log(`   ⚠️ ${label}: netværksfejl (forsøg ${attempt + 1}/${maxAttempts}): ${e.message}`);
+      if (attempt === maxAttempts - 1) break;
+      if (!sleepIfTime_(waits[attempt] || 6000, reserveMs)) break;
+      continue;
     }
 
-    throw new Error(`Uventet API-svar (HTTP ${code})`);
+    let json = null;
+    try { json = JSON.parse(body); } catch (e) { json = null; }
+
+    const apiStatus = (json && json.error && json.error.status)  || "";
+    const apiMsg    = (json && json.error && json.error.message) || "";
+
+    // Midlertidig? Se på HTTP-koden OG error.status — aldrig på fejltekstens
+    // ordlyd, som Google kan omformulere når som helst.
+    const transient = code === 408 || code === 429 || code >= 500
+                   || apiStatus === "UNAVAILABLE" || apiStatus === "RESOURCE_EXHAUSTED";
+
+    if (transient) {
+      lastErr = new Error(`${label}: HTTP ${code} ${apiStatus} ${apiMsg}`.trim());
+      console.log(`   ⚠️ ${label}: midlertidig fejl HTTP ${code} ${apiStatus} `
+        + `(forsøg ${attempt + 1}/${maxAttempts}) — ${secsLeft_()} s tilbage`);
+      if (attempt === maxAttempts - 1) break;
+      if (!sleepIfTime_(waits[attempt] || 6000, reserveMs)) break;
+      continue;
+    }
+
+    // Permanente fejl (400/403/404): kast MED Googles egen besked — retry
+    // er spild af budget, og beskeden må ikke gå tabt som "Uventet API-svar".
+    if (!json)      throw new Error(`${label}: ikke-JSON svar (HTTP ${code}): ${body.slice(0, 200)}`);
+    if (json.error) throw new Error(`${label}: HTTP ${code} — ${apiMsg}`);
+
+    const candidate    = json.candidates && json.candidates[0];
+    const finishReason = candidate ? (candidate.finishReason || "UKENDT") : "INGEN_KANDIDAT";
+    const text = candidate && candidate.content && candidate.content.parts
+              && candidate.content.parts[0] && candidate.content.parts[0].text;
+
+    if (!text) {
+      throw new Error(`${label}: tomt svar (HTTP ${code}, finishReason=${finishReason}, `
+        + `promptFeedback=${JSON.stringify(json.promptFeedback || {})})`);
+    }
+    return { text: text, finishReason: finishReason, code: code };
   }
+
+  throw lastErr || new Error(`${label}: fejlede efter ${maxAttempts} forsøg`);
 }
 
 /**
- * Kalder Gemini API med PDF (med retry ved fejl)
+ * Kalder Gemini API med tekst. Returnerer rå tekst (JSON-streng) — den
+ * kontrakt som analyzeWithGemini_/parseJsonSafe_ bygger på.
  */
-function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
+function callGeminiJson_(apiKey, prompt, opts) {
+  return geminiFetch_(apiKey, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2
+    }
+  }, Object.assign({ label: "Analyse", maxAttempts: 3 }, opts || {})).text;
+}
 
-  const payload = {
+/**
+ * Kalder Gemini API med PDF. Returnerer rå tekst, som ovenfor.
+ */
+function callGeminiWithPdf_(apiKey, prompt, pdfBase64, opts) {
+  return geminiFetch_(apiKey, {
     contents: [{
       parts: [
         { text: prompt },
@@ -1340,35 +1563,7 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64) {
       responseMimeType: "application/json",
       temperature: 0.2
     }
-  };
-
-  const options = {
-    method: "post",
-    contentType: "application/json",
-    headers: { "x-goog-api-key": apiKey },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-
-  // Retry op til 2 gange ved midlertidige fejl
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = UrlFetchApp.fetch(url, options);
-    const code = response.getResponseCode();
-
-    if (code === 429 || code >= 500) {
-      console.log(`  ⚠️ PDF API fejl ${code}, forsøg ${attempt + 1}/3...`);
-      if (attempt < 2) { Utilities.sleep(2000 * (attempt + 1)); continue; }
-      throw new Error(`PDF API fejl ${code} efter 3 forsøg`);
-    }
-
-    const json = JSON.parse(response.getContentText());
-
-    if (json.candidates && json.candidates[0]?.content?.parts?.[0]?.text) {
-      return json.candidates[0].content.parts[0].text;
-    }
-
-    throw new Error(`Uventet API-svar fra PDF-analyse (HTTP ${code})`);
-  }
+  }, Object.assign({ label: "Analyse (PDF)", maxAttempts: 3 }, opts || {})).text;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1450,37 +1645,17 @@ ${truncated}
 `.trim();
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
+    // Kun 2 forsøg: fakta-tjekket ligger sidst i kæden og må aldrig
+    // sprænge tidsbudgettet. catch nedenfor degraderer blødt.
+    const res = geminiFetch_(apiKey, {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.0
+      }
+    }, { label: "Fakta-tjek", maxAttempts: 2, reserveMs: TAIL_RESERVE_MS });
 
-    const response = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      headers: { "x-goog-api-key": apiKey },
-      payload: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.0
-        }
-      }),
-      muteHttpExceptions: true
-    });
-
-    const code = response.getResponseCode();
-    if (code !== 200) {
-      console.log(`   ⚠️ Fakta-tjek API fejl: HTTP ${code}`);
-      return {
-        summary: { verified: 0, unverified: 0, contradicted: 0 },
-        claims: [],
-        error: `Gemini API fejl: HTTP ${code}`
-      };
-    }
-
-    const json = JSON.parse(response.getContentText());
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Tomt svar fra Gemini");
-
-    const result = JSON.parse(text);
+    const result = JSON.parse(res.text);
     result.claims = result.claims || [];
     if (!result.summary) {
       result.summary = {
@@ -1516,7 +1691,8 @@ function formatFactCheckReport_(factCheck) {
   }
 
   if (factCheck.note) {
-    lines.push(`ℹ️ ${factCheck.note}`);
+    lines.push(`⚠️ IKKE FAKTA-TJEKKET: ${factCheck.note}`);
+    lines.push("Gennemse kladden ekstra grundigt.");
     lines.push("══════════════════════════════════════════════");
     return lines.join("\n");
   }
@@ -1571,6 +1747,8 @@ function generateWeeklyDraft() {
   const ss     = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
   const sheet  = ss.getSheetByName(props.getProperty(CFG.P_SHEET_NAME) || "Inbox");
   const apiKey = mustGet_(props, CFG.P_API_KEY);
+  // Hentes tidligt: en manglende property skal fejle FØR vi bruger et Gemini-kald
+  const folderId = mustGet_(props, CFG.P_DRAFT_FOLDER_ID);
 
   // Hent alle data
   const all = sheet.getDataRange().getValues();
@@ -1584,22 +1762,28 @@ function generateWeeklyDraft() {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const weekItems = all.slice(1)
-    .map(row => ({
-      date:         parseDate_(row[0]),
-      type:         row[1],
-      committee:    row[2],
-      subject:      row[3],
-      source:       row[4],
-      sourceId:     row[5],
-      sourceUrl:    row[6],
-      snippet:      row[7],
-      tldr:         row[9],
-      sfAnalysis:   row[10],
-      facts:        row[11],
-      amounts:      row[12],
-      score:        Number(row[13]) || 1,
-      programMatch: row[14]
-    }))
+    .map((row, idx) => {
+      // Tom score betyder "aldrig analyseret" — IKKE score 1. Det gamle
+      // Number(row[13]) || 1 gjorde uanalyserede sager til administrative.
+      const rawScore = String(row[13]).trim();
+      return {
+        sheetRow:     idx + 2,
+        date:         parseDate_(row[0]),
+        type:         row[1],
+        committee:    row[2],
+        subject:      row[3],
+        source:       row[4],
+        sourceId:     row[5],
+        sourceUrl:    row[6],
+        snippet:      row[7],
+        tldr:         row[9],
+        sfAnalysis:   row[10],
+        facts:        row[11],
+        amounts:      row[12],
+        score:        rawScore === "" ? null : (Number(rawScore) || 1),
+        programMatch: row[14]
+      };
+    })
     .filter(item => item.date && item.date >= weekAgo && item.date <= now);
 
   if (weekItems.length === 0) {
@@ -1610,16 +1794,40 @@ function generateWeeklyDraft() {
   console.log(`📋 Fandt ${weekItems.length} sager fra denne uge`);
 
   // Sorter efter score
-  weekItems.sort((a, b) => b.score - a.score);
+  weekItems.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-  // Del op i kategorier
-  const topStories    = weekItems.filter(i => i.score >= 4);
-  const mediumStories = weekItems.filter(i => i.score === 3);
-  const adminItems    = weekItems.filter(i => i.score <= 2);
+  // Byg ALTID kategorierne ud fra "scored" — null <= 2 er sandt i JavaScript,
+  // så uanalyserede rækker ville ellers snige sig ind i adminItems igen.
+  const unanalyzed    = weekItems.filter(i => i.score === null);
+  const scored        = weekItems.filter(i => i.score !== null);
+  const topStories    = scored.filter(i => i.score >= 4);
+  const mediumStories = scored.filter(i => i.score === 3);
+  const adminItems    = scored.filter(i => i.score <= 2);
 
   console.log(`  🔥 Top-sager: ${topStories.length}`);
   console.log(`  📌 Mellem-sager: ${mediumStories.length}`);
   console.log(`  📁 Administrative: ${adminItems.length}`);
+  if (unanalyzed.length > 0) {
+    console.log(`  ⏳ Mangler analyse (tom score): ${unanalyzed.length} — udeladt af nyhedsbrevet`);
+  }
+
+  // Dødmandsknap: 0 top + 0 mellem OG manglende analyser = ødelagt grundlag,
+  // ikke en stille uge. En ægte stille uge (alt analyseret, alt 1-2) rammer
+  // IKKE denne gren og får stadig sit korte, ærlige nyhedsbrev.
+  if (topStories.length === 0 && mediumStories.length === 0 && unanalyzed.length > 0) {
+    GmailApp.sendEmail(
+      Session.getEffectiveUser().getEmail(),
+      "⚠️ SF Nyhedsbrev sprunget over — analysen mangler",
+      `Hej Maja!\n\nDer blev IKKE lavet en kladde denne uge.\n\n`
+      + `${unanalyzed.length} af ugens ${weekItems.length} sager mangler en analyse `
+      + `(tom score i kolonne N), og ingen sager scorede 3 eller derover.\n`
+      + `Det tyder på at analysen fejlede — ikke på at der ikke skete noget.\n\n`
+      + `Kør dailyRepairAnalyses() og derefter testGenerateNewsletter() igen.\n\n`
+      + `/Din SF Presse-Robot v8.0 🤖`
+    );
+    console.log("⛔ Afbryder — analysegrundlaget er ufuldstændigt");
+    return;   // return, ikke throw: giver Maja den danske besked frem for en stacktrace
+  }
 
   // Én samlet FirstAgenda-auth til både kalender og fakta-tjek
   console.log("🔑 Autenticerer mod FirstAgenda (én gang)...");
@@ -1670,26 +1878,51 @@ function generateWeeklyDraft() {
     throw new Error("Nyhedsbrev-generering fejlede — se loggen for detaljer");
   }
 
-  // Fakta-tjek mod dagsordener.middelfart.dk (genbruger cookies fra ovenfor)
-  console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
-  const groundTruth = collectGroundTruth_([...topStories, ...mediumStories], faCookies);
+  // GEM STRAKS — kladden må aldrig gå tabt i et senere trin.
+  // Fakta-tjek-rapporten indsættes i dokumentet bagefter.
+  // Gemmes med et TYDELIGT "ikke verificeret"-banner. Dør kørslen inden
+  // fakta-tjekket er færdigt, siger dokumentet selv at det ikke er tjekket
+  // — i stedet for at ligne en færdig, verificeret kladde.
+  const draftDoc = createDraftDocument_(folderId, draftText, dateRange, {
+    error: "Kørslen nåede ikke at fakta-tjekke — kladden er IKKE verificeret. "
+         + "Kør testGenerateNewsletter() igen."
+  });
+  console.log(`   💾 Kladde gemt (før fakta-tjek): ${draftDoc.url}`);
 
-  // Tilføj kommende møder som ground truth så fakta-tjekket kan
-  // verificere kalender-sektionen (i stedet for at flagge dem som uverificerede)
-  const tz = Session.getScriptTimeZone();
-  for (const m of upcomingMeetings) {
-    const day  = Utilities.formatDate(m.date, tz, "EEEE d. MMMM");
-    const time = Utilities.formatDate(m.date, tz, "HH:mm");
-    groundTruth.push({
-      committee:  m.committee,
-      subject:    `Kommende møde: ${m.name}`,
-      sourceUrl:  "",
-      sourceType: "kalender",
-      freshText:  `${m.committee} holder møde ${day} kl. ${time} (${m.name}).`
-    });
+  // Fakta-tjek mod dagsordener.middelfart.dk (genbruger cookies fra ovenfor).
+  // Køres ALTID når der er tid — springes kun over hvis alternativet er
+  // at miste hele kørslen, og markeres da højlydt i både doc og emnelinje.
+  const FACTCHECK_MIN_MS = 100 * 1000;   // groundtruth-hentning + ét fakta-tjek-kald
+  let factCheck;
+
+  if (timeFor_(FACTCHECK_MIN_MS + TAIL_RESERVE_MS)) {
+    console.log("\n🔍 Kører fakta-tjek mod dagsordener.middelfart.dk...");
+    const groundTruth = collectGroundTruth_([...topStories, ...mediumStories], faCookies);
+
+    // Tilføj kommende møder som ground truth så fakta-tjekket kan
+    // verificere kalender-sektionen (i stedet for at flagge dem som uverificerede)
+    const tz = Session.getScriptTimeZone();
+    for (const m of upcomingMeetings) {
+      const day  = Utilities.formatDate(m.date, tz, "EEEE d. MMMM");
+      const time = Utilities.formatDate(m.date, tz, "HH:mm");
+      groundTruth.push({
+        committee:  m.committee,
+        subject:    `Kommende møde: ${m.name}`,
+        sourceUrl:  "",
+        sourceType: "kalender",
+        freshText:  `${m.committee} holder møde ${day} kl. ${time} (${m.name}).`
+      });
+    }
+
+    factCheck = factCheckNewsletter_(apiKey, draftText, groundTruth);
+  } else {
+    console.log(`   ⏭️ Fakta-tjek sprunget over — kun ${secsLeft_()} s tilbage af tidsbudgettet`);
+    factCheck = {
+      summary: { verified: 0, unverified: 0, contradicted: 0 },
+      claims: [],
+      error: "Sprunget over pga. tidsbudget — kør testGenerateNewsletter() igen når Gemini er stabil"
+    };
   }
-
-  const factCheck = factCheckNewsletter_(apiKey, draftText, groundTruth);
 
   const fc = factCheck.summary;
   console.log(`   ✅ Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`);
@@ -1697,36 +1930,47 @@ function generateWeeklyDraft() {
     console.log(`   ⚠️ Fakta-tjek fejl: ${factCheck.error}`);
   }
 
-  // Opret dokument med fakta-tjek-rapport øverst
-  const folderId = mustGet_(props, CFG.P_DRAFT_FOLDER_ID);
-  const docUrl   = createDraftDocument_(folderId, draftText, dateRange, factCheck);
+  // Indsæt fakta-tjek-rapporten øverst i det allerede gemte dokument
+  const doc = DocumentApp.openById(draftDoc.id);
+  doc.getBody().setText(formatFactCheckReport_(factCheck) + "\n\n\n" + draftText);
+  doc.saveAndClose();
 
-  // Emnelinje afspejler fakta-tjek-status
-  const fcIcon = factCheck.error ? "⚠️"
-    : fc.contradicted > 0        ? "🚫"
-    : fc.unverified > 0          ? "⚠️"
-    :                               "✅";
+  // Emnelinje afspejler fakta-tjek-status. factCheck.note (tom kildedata)
+  // tæller som "ikke tjekket" — før fik det grønt flueben.
+  const fcMissing = !!(factCheck.error || factCheck.note);
+  const fcIcon = fcMissing    ? "⚠️"
+    : fc.contradicted > 0     ? "🚫"
+    : fc.unverified > 0       ? "⚠️"
+    :                           "✅";
 
-  const fcLine = factCheck.error
-    ? `Fakta-tjek kunne ikke køres: ${factCheck.error}`
+  const fcLine = factCheck.error ? `IKKE fakta-tjekket: ${factCheck.error}`
+    : factCheck.note             ? `IKKE fakta-tjekket: ${factCheck.note}`
     : `Fakta-tjek: ${fc.verified} verificeret, ${fc.unverified} uverificeret, ${fc.contradicted} modsagt`;
+
+  // Emnelinjen skal vise den VÆRSTE tilstand. Uden dette blev "tjekket og
+  // modsagt" usynligt i indbakken — identisk med en helt ren kørsel.
+  const emneAdvarsel = fcMissing ? "⚠️ IKKE FAKTA-TJEKKET — "
+    : fc.contradicted > 0        ? "🚫 MODSAGTE PÅSTANDE — "
+    : fc.unverified > 0          ? "⚠️ "
+    :                              "";
 
   // Send notifikation
   GmailApp.sendEmail(
     Session.getEffectiveUser().getEmail(),
-    `📰 ${fcIcon} SF Nyhedsbrev kladde klar (${dateRange})`,
+    `📰 ${emneAdvarsel}SF Nyhedsbrev kladde klar (${dateRange})`,
     `Hej Maja!\n\nDit ugentlige nyhedsbrev er klar til gennemsyn.\n\n`
-    + `Link: ${docUrl}\n\n`
+    + `Link: ${draftDoc.url}\n\n`
     + `${fcIcon} ${fcLine}\n\n`
     + `Statistik:\n`
     + `- Top-sager (score 4-5): ${topStories.length}\n`
     + `- Mellem-sager (score 3): ${mediumStories.length}\n`
-    + `- Administrative (score 1-2): ${adminItems.length}\n\n`
-    + `Husk at gennemse og tilføje din personlige SF-vinkel!\n\n`
+    + `- Administrative (score 1-2): ${adminItems.length}\n`
+    + (unanalyzed.length > 0 ? `- ⏳ Mangler analyse: ${unanalyzed.length} (udeladt)\n` : "")
+    + `\nHusk at gennemse og tilføje din personlige SF-vinkel!\n\n`
     + `/Din SF Presse-Robot v8.0 🤖`
   );
 
-  console.log(`\n✅ Nyhedsbrev oprettet: ${docUrl}`);
+  console.log(`\n✅ Nyhedsbrev oprettet: ${draftDoc.url}`);
 }
 
 /**
@@ -1905,48 +2149,27 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
 `;
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
-
-    const payload = {
+    const res = geminiFetch_(apiKey, {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 16384
       }
-    };
+    }, { label: "Nyhedsbrev", maxAttempts: 3, reserveMs: DOC_RESERVE_MS });
 
-    const response = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      headers: { "x-goog-api-key": apiKey },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-
-    const json = JSON.parse(response.getContentText());
-
-    const candidate = json.candidates?.[0];
-    if (candidate) {
-      const finishReason = candidate.finishReason || "UNKNOWN";
-      if (finishReason !== "STOP") {
-        console.log(`⚠️ Gemini stoppede med finishReason: ${finishReason} (forventet: STOP)`);
-      }
-      const text = candidate.content?.parts?.[0]?.text;
-      if (text) {
-        if (!text.includes("SEKTION 7") && !text.includes("De bedste hilsner")) {
-          console.log("⚠️ Nyhedsbrevet ser ufuldstændigt ud — mangler SEKTION 7 / afslutning");
-        }
-        return text;
-      }
+    if (res.finishReason !== "STOP") {
+      console.log(`⚠️ Gemini stoppede med finishReason: ${res.finishReason} (forventet: STOP)`);
     }
-    if (json.error) {
-      console.log(`❌ Gemini API-fejl: ${json.error.message || JSON.stringify(json.error)}`);
+    // Ren ADVARSEL — aldrig en fejl-trigger. Skriver modellen fx "Mange
+    // hilsner", ville vi ellers smide et fuldt brugbart nyhedsbrev væk.
+    if (!res.text.includes("SEKTION 7") && !res.text.includes("De bedste hilsner")) {
+      console.log("⚠️ Nyhedsbrevet ser ufuldstændigt ud — mangler SEKTION 7 / afslutning");
     }
+    return res.text;
   } catch (e) {
     console.log(`❌ Fejl ved nyhedsbrev-generering: ${e.message}`);
+    return null;   // KONTRAKT: generateWeeklyDraft sender den danske fejlmail og kaster
   }
-
-  return null;
 }
 
 /**
@@ -1963,10 +2186,11 @@ function createDraftDocument_(folderId, content, dateRange, factCheck) {
   }
 
   body.setText(fullContent);
+  doc.saveAndClose();
 
   DriveApp.getFileById(doc.getId()).moveTo(DriveApp.getFolderById(folderId));
 
-  return doc.getUrl();
+  return { id: doc.getId(), url: doc.getUrl() };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
