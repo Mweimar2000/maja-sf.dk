@@ -54,6 +54,16 @@ const CFG = {
   // Model konfiguration
   MODEL_NAME: "gemini-3.7-flash",
 
+  // Reservemodeller, prøves i rækkefølge hvis primærmodellen er
+  // overbelastet ("high demand") eller svarer ubrugeligt. Den nyeste model
+  // er typisk mest kapacitetsbegrænset lige efter udgivelse.
+  MODEL_FALLBACKS: ["gemini-3.6-flash", "gemini-3.5-flash"],
+
+  // Gemini 3.x-modeller "tænker" altid (thinking kan IKKE slås fra på
+  // 3.7-flash), og tænke-tokens tælles med i maxOutputTokens. Uden god
+  // plads her bliver svaret tomt eller afkortet midt i JSON'en.
+  ANALYSIS_MAX_TOKENS: 8192,
+
   // Live-hentet stilguide. Robotten forsøger at hente denne URL hver gang
   // den genererer et nyhedsbrev — redigér stilguide.md og push til GitHub,
   // så bruger robotten den nye tone næste gang.
@@ -1371,6 +1381,8 @@ function analyzeWithGemini_(apiKey, data) {
       return parsed;
     }
     console.log(`  ❌ Gemini returnerede ikke-parsbar JSON: ${data.subject}`);
+    console.log(`     Svarets første 200 tegn: ${String(response).slice(0, 200)}`);
+    console.log(`     (afkortet svar = tænke-tokens har spist token-loftet)`);
   } catch (e) {
     console.log(`  ❌ Gemini fejl (${data.subject}): ${e.message}`);
   }
@@ -1460,9 +1472,35 @@ function geminiFetch_(apiKey, payload, opts) {
   const label       = opts.label || "Gemini";
   const maxAttempts = opts.maxAttempts || 3;
   const reserveMs   = opts.reserveMs || 0;
-  const waits       = [3000, 6000, 6000];   // bundet backoff, maks ~15 s i alt
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.MODEL_NAME}:generateContent`;
+  const models = [CFG.MODEL_NAME].concat(CFG.MODEL_FALLBACKS || []);
+  let lastErr = null;
+
+  for (let m = 0; m < models.length; m++) {
+    if (m > 0) {
+      if (!timeFor_(WORST_FETCH_MS + reserveMs)) {
+        console.log(`   ⏱️ ${label}: ikke tid til reservemodel — ${secsLeft_()} s tilbage`);
+        break;
+      }
+      console.log(`   ↪️ ${label}: prøver reservemodel ${models[m]}`);
+    }
+    try {
+      // Reservemodeller får færre forsøg — de skal redde kørslen, ikke bruge den
+      return geminiFetchModel_(apiKey, models[m], payload, label,
+                               m === 0 ? maxAttempts : 2, reserveMs);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  throw lastErr || new Error(`${label}: alle modeller fejlede`);
+}
+
+/** Ét forsøgsforløb mod ÉN model. Kaster hvis den model ikke kan levere. */
+function geminiFetchModel_(apiKey, model, payload, label, maxAttempts, reserveMs) {
+  const waits = [3000, 6000, 6000];   // bundet backoff, maks ~15 s i alt
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const options = {
     method: "post",
     contentType: "application/json",
@@ -1528,7 +1566,10 @@ function geminiFetch_(apiKey, payload, opts) {
       throw new Error(`${label}: tomt svar (HTTP ${code}, finishReason=${finishReason}, `
         + `promptFeedback=${JSON.stringify(json.promptFeedback || {})})`);
     }
-    return { text: text, finishReason: finishReason, code: code };
+    if (model !== CFG.MODEL_NAME) {
+      console.log(`   ✅ ${label}: leveret af reservemodel ${model}`);
+    }
+    return { text: text, finishReason: finishReason, code: code, model: model };
   }
 
   throw lastErr || new Error(`${label}: fejlede efter ${maxAttempts} forsøg`);
@@ -1543,7 +1584,8 @@ function callGeminiJson_(apiKey, prompt, opts) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.2
+      temperature: 0.2,
+      maxOutputTokens: CFG.ANALYSIS_MAX_TOKENS
     }
   }, Object.assign({ label: "Analyse", maxAttempts: 3 }, opts || {})).text;
 }
@@ -1561,7 +1603,8 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64, opts) {
     }],
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.2
+      temperature: 0.2,
+      maxOutputTokens: CFG.ANALYSIS_MAX_TOKENS
     }
   }, Object.assign({ label: "Analyse (PDF)", maxAttempts: 3 }, opts || {})).text;
 }
@@ -1651,7 +1694,8 @@ ${truncated}
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.0
+        temperature: 0.0,
+        maxOutputTokens: CFG.ANALYSIS_MAX_TOKENS
       }
     }, { label: "Fakta-tjek", maxAttempts: 2, reserveMs: TAIL_RESERVE_MS });
 
@@ -2424,6 +2468,69 @@ function debugTestFirstAgendaApi() {
       console.log(`   📄 ${item.Caption}`);
       console.log(`      ${content.slice(0, 300)}...\n`);
     }
+  }
+}
+
+/**
+ * Diagnose: hvilken tilstand er arkets rækker i?
+ * Kør denne når nyhedsbrevet siger "Mangler analyse" for at se
+ * præcis hvor mange rækker der venter, og hvorfor.
+ */
+function debugDiagnoseSheet() {
+  const props = PropertiesService.getScriptProperties();
+  const ss    = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
+  const name  = props.getProperty(CFG.P_SHEET_NAME) || "Inbox";
+  const sheet = ss.getSheetByName(name);
+  if (!sheet) { console.log(`❌ Ark '${name}' findes ikke!`); return; }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) { console.log("ℹ️ Ingen datarækker"); return; }
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  let tom = 0, forgiftet = 0, formalia = 0, scoret = 0, denneUge = 0, tomDenneUge = 0;
+  const eksempler = [];
+
+  for (const row of data) {
+    const score = String(row[13]).trim();
+    const tldr  = String(row[9]).trim();
+    const d     = parseDate_(row[0]);
+    const iUge  = d && d >= weekAgo && d <= now;
+    if (iUge) denneUge++;
+
+    if (score === "") {
+      tom++;
+      if (iUge) tomDenneUge++;
+      if (eksempler.length < 5) eksempler.push(`tom: ${row[3]}`);
+    } else if (tldr === "Analyse fejlede" || tldr === "Kunne ikke analyseres") {
+      forgiftet++;
+      if (eksempler.length < 5) eksempler.push(`forgiftet: ${row[3]}`);
+    } else if (tldr === "Formalia/procedurepunkt") {
+      formalia++;
+    } else {
+      scoret++;
+    }
+  }
+
+  console.log(`📊 DIAGNOSE af ark '${name}' (${data.length} rækker)\n`);
+  console.log(`  ✅ Rigtigt analyseret:      ${scoret}`);
+  console.log(`  📁 Ægte formalia:           ${formalia}`);
+  console.log(`  ⏳ Aldrig analyseret (tom): ${tom}`);
+  console.log(`  ☠️ Forgiftet af gammel fejl: ${forgiftet}`);
+  console.log(`\n  📅 Sager i denne uges vindue: ${denneUge} (heraf ${tomDenneUge} uden analyse)`);
+
+  if (eksempler.length) {
+    console.log(`\n  Eksempler på rækker der venter:`);
+    eksempler.forEach(e => console.log(`   - ${e}`));
+  }
+
+  if (tom + forgiftet > 0) {
+    console.log(`\n  ↻ Kør dailyRepairAnalyses() for at analysere de ${tom + forgiftet} rækker.`);
+    console.log(`     Kan kræve flere kørsler — hver kørsel har 6 minutter.`);
+  } else {
+    console.log(`\n  ✅ Alle rækker er analyseret — nyhedsbrevet kan laves.`);
   }
 }
 
