@@ -1,0 +1,6 @@
+{
+  "name": "sf-middelfart-nyhedsbrev",
+  "private": true,
+  "scripts": { "test": "node --test tests/*.test.cjs" },
+  "engines": { "node": ">=22" }
+}

@@ -1,5 +1,10 @@
 # AI-overdragelse — SF Middelfart nyhedsbrevsrobot
 
+> Historisk overdragelse fra Claude-versionen. For rettelserne i version
+> `8.1.0-validation`, se [verifikation](docs/VERIFIKATION.md) og
+> [installation](docs/INSTALLATION.md). Produktionsinstallation er endnu ikke verificeret.
+> PDF-udgaven nedenfor er ligeledes historisk.
+
 **Formål:** Dette dokument gør det muligt for et andet menneske eller en anden
 AI-agent at forstå, gennemgå og genskabe arbejdet på denne robot uden adgang til
 den oprindelige chattråd. Det beskriver systemet, de fejl der er fundet og rettet,
