@@ -668,3 +668,17 @@ test('superseding an agenda never excludes an updated referat sharing its source
   assert.ok(h.logs.some(x=>/Fandt 2 sager fra denne uge/.test(x)));
   assert.equal(h.documents.length,1); assert.equal(h.mails.length,0);
 });
+
+test('source citations survive both initial save and failed fact check without notification', t => {
+  const source=item(); const h=harness(t,[sourceRow(source)]); h.agendas.set('council',[source]);
+  h.replies.push(DRAFT,{}, {}, {});
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length,1);
+  for (const saved of h.documents[0].saves) {
+    assert.match(saved,/KILDER TIL KONTROL/);
+    assert.ok(saved.includes(`${FA}/vis?id=council&punktid=cycle`));
+    assert.match(saved,/2026-09-07 12:00/);
+  }
+  assert.match(h.documents[0].text,/FAKTA-TJEK KUNNE IKKE KØRES/);
+  assert.equal(h.mails.length,0);
+});

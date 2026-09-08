@@ -1865,6 +1865,25 @@ function notifyDraft_(options, to, subject, body) {
   GmailApp.sendEmail(to, subject, body);
 }
 
+/** Kildelinks bevares også, hvis modellen eller faktatjekket svigter. */
+function formatSourceList_(stories) {
+  const seen = new Set(), lines = ["KILDER TIL KONTROL"];
+  stories.forEach(story => {
+    const links = story.source === "FirstAgenda API"
+      ? [firstAgendaSourceUrl_(story.sourceId)].filter(Boolean)
+      : extractUrls_(String(story.sourceUrl || "")).filter(sourceUrlAllowed_);
+    const date = parseDate_(story.meetingDate);
+    const originalDate = date ? Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm") : "Dato ikke angivet";
+    links.forEach(url => {
+      if (seen.has(url)) return;
+      seen.add(url);
+      lines.push(`${story.subject} — ${story.committee} — ${originalDate}\n${url}`);
+    });
+  });
+  if (!seen.size) lines.push("Ingen offentlige kildelinks tilgængelige i de udvalgte kilder.");
+  return lines.join("\n\n");
+}
+
 function generateWeeklyDraft(options) {
   return withRobotLock_(() => generateWeeklyDraftLocked_(options));
 }
@@ -2013,7 +2032,7 @@ function generateWeeklyDraftLocked_(options) {
   const coverage = `DÆKNING: ${weekItems.length} sager i perioden · ${scored.length} analyseret · `
     + `${unanalyzed.length} mangler analyse.`
     + (unanalyzed.length ? "\n⚠️ Ufuldstændigt grundlag — relevante sager kan mangle." : "");
-  const savedDraftText = coverage + "\n\n" + draftText;
+  const savedDraftText = coverage + "\n\n" + draftText + "\n\n" + formatSourceList_(scored);
 
   // GEM STRAKS — kladden må aldrig gå tabt i et senere trin.
   // Fakta-tjek-rapporten indsættes i dokumentet bagefter.
