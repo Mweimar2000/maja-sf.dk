@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.3-validation";
+const ROBOT_VERSION = "8.1.4-validation";
 const CFG = {
   // Script Properties keys
   P_SHEET_ID:        "SPREADSHEET_ID",
@@ -681,12 +681,13 @@ function collectGroundTruth_(stories, existingCookies) {
       if (!timeFor_(WORST_FETCH_MS * 2 + TAIL_RESERVE_MS)) throw new Error("Tidsbudget til genhentning opbrugt");
       const row = [null, story.type, story.committee, story.subject, story.source,
         story.sourceId, story.sourceUrl, story.snippet];
-      const data = loadAnalysisSource_(row, cache);
+      const data = loadAnalysisSource_(row, cache, { deferPdfs: true });
       source.freshText = data.content;
+      source.pdfReferences = data.pdfReferences || [];
       source.pdfBase64List = data.pdfBase64List;
       // PDF-citater kan læses af modellen, men kan ikke bekræftes ordret
       // af denne tekstvalidator. Rapporten gør dette eksplicit.
-      source.incomplete = !!data.sourceIncomplete || data.pdfBase64List.length > 0;
+      source.incomplete = !!data.sourceIncomplete || data.pdfBase64List.length > 0 || source.pdfReferences.length > 0;
     } catch (e) {
       source.sourceType += "-cached";
       source.freshText = story.snippet || "";
@@ -694,6 +695,25 @@ function collectGroundTruth_(stories, existingCookies) {
       console.log(`   ⚠️ Kilde ikke genhentet: ${e.message}`);
     }
     sources.push(source);
+  }
+  // Hent alle tekster før PDF'er: ét stort bilag må ikke gøre efterfølgende
+  // originale beslutninger og behandlingsplaner til cached kilder.
+  let pdfBytes = sources.reduce((n, source) => n + source.pdfBase64List.reduce((m, pdf) => m + pdf.data.length * 0.75, 0), 0);
+  pdfs: for (const source of sources) {
+    for (const ref of source.pdfReferences || []) {
+      if (!timeFor_(WORST_FETCH_MS * 2 + TAIL_RESERVE_MS)) break pdfs;
+      try {
+        const pdf = fetchPdfFromUrl_(ref.url, cache.cookies);
+        if (!pdf.success) throw new Error("PDF kunne ikke genhentes");
+        const size = pdf.pdfBase64.length * 0.75;
+        if (pdfBytes + size > 15 * 1024 * 1024) break pdfs;
+        source.pdfBase64List.push({ name: ref.name, data: pdf.pdfBase64 });
+        pdfBytes += size;
+      } catch (e) {
+        source.incomplete = true;
+        console.log(`   ⚠️ PDF-kilde kræver manuel kontrol: ${e.message}`);
+      }
+    }
   }
   return sources;
 }
@@ -1200,8 +1220,9 @@ function sourceDateMs_(row) {
 }
 
 /** Samme originale input til første analyse og reparation; aldrig et AI-resumé. */
-function loadAnalysisSource_(row, cache) {
+function loadAnalysisSource_(row, cache, options) {
   cache = cache || {};
+  options = options || {};
   const result = { subject: row[3], committee: row[2], sourceType: row[1],
     originalDate: row[0], sourceRecordedAt: row[15], content: row[7] || "", pdfBase64List: [] };
   if (row[4] === "FirstAgenda API") {
@@ -1209,7 +1230,8 @@ function loadAnalysisSource_(row, cache) {
     if (ids.length !== 3) throw new Error("Ugyldigt FirstAgenda-ID");
     if (!cache.cookies) cache.cookies = authenticateFirstAgenda_();
     if (!cache[ids[1]]) {
-      if (!timeFor_(WORST_FETCH_MS * 2 + 10000)) throw new Error("Ikke tid til kilde og analyse");
+      const reserve = options.deferPdfs ? WORST_FETCH_MS + TAIL_RESERVE_MS : WORST_FETCH_MS + 10000;
+      if (!timeFor_(WORST_FETCH_MS + reserve)) throw new Error("Ikke tid til kilde og analyse");
       cache[ids[1]] = fetchMeetingAgenda_(cache.cookies, ids[1]);
     }
     const item = cache[ids[1]].find(x => String(x.Id) === ids[2] && x.IsOpen);
@@ -1219,15 +1241,25 @@ function loadAnalysisSource_(row, cache) {
       throw new Error("Kilden har ændret sig siden indsamling — indlæs den igen før analyse");
     }
     // Felter kan indeholde tom HTML og en PDF som den egentlige sagstekst.
-    const references = firstAgendaPdfReferences_(item);
-    let totalBytes = 0;
-    for (const ref of references) {
-      if (!timeFor_(WORST_FETCH_MS * 2 + 10000)) throw new Error("Ikke tid til PDF og analyse");
-      const pdf = fetchPdfFromUrl_(ref.url, cache.cookies);
-      if (!pdf.success) throw new Error("FirstAgenda-PDF kunne ikke genhentes");
-      totalBytes += pdf.pdfBase64.length * 0.75;
-      if (totalBytes > 15 * 1024 * 1024) throw new Error("Samlet PDF-budget overskredet");
-      result.pdfBase64List.push({name:ref.name, data:pdf.pdfBase64});
+    let references = [];
+    try { references = firstAgendaPdfReferences_(item); }
+    catch (e) {
+      if (!options.deferPdfs) throw e;
+      result.sourceIncomplete = true;
+      console.log(`   ⚠️ Bilag kan ikke indlæses: ${e.message}`);
+    }
+    if (options.deferPdfs) {
+      result.pdfReferences = references;
+    } else {
+      let totalBytes = 0;
+      for (const ref of references) {
+        if (!timeFor_(WORST_FETCH_MS * 2 + 10000)) throw new Error("Ikke tid til PDF og analyse");
+        const pdf = fetchPdfFromUrl_(ref.url, cache.cookies);
+        if (!pdf.success) throw new Error("FirstAgenda-PDF kunne ikke genhentes");
+        totalBytes += pdf.pdfBase64.length * 0.75;
+        if (totalBytes > 15 * 1024 * 1024) throw new Error("Samlet PDF-budget overskredet");
+        result.pdfBase64List.push({name:ref.name, data:pdf.pdfBase64});
+      }
     }
   } else {
     const msg = GmailApp.getMessageById(String(row[5]));
@@ -1771,8 +1803,9 @@ function validateFactCheckText_(text, sources) {
       evidence = "Modellens kildecitat kunne ikke genfindes ordret i den angivne kilde.";
     }
     summary[verdict]++;
-    return { claim: c.claim, verdict, evidence, sourceIndex: source ? c.sourceIndex : null,
-      sourceUrl: source ? source.sourceUrl || "" : "" };
+    const attributedSource = verdict === "unverified" ? null : source;
+    return { claim: c.claim, verdict, evidence, sourceIndex: attributedSource ? c.sourceIndex : null,
+      sourceUrl: attributedSource ? attributedSource.sourceUrl || "" : "" };
   });
   const result = { summary, claims };
   if (sources.some(s => /cached/.test(s.sourceType) || s.incomplete)) {
@@ -2134,7 +2167,54 @@ function generateWeeklyDraftLocked_(options) {
  * Tonen hentes live fra stilguide.md via loadToneGuide_() — med
  * SF_TONE_GUIDE_FALLBACK som nødudgang hvis GitHub ikke kan nås.
  */
+function requiresLaterDecision_(story) {
+  const committee = String(story.committee || "").trim();
+  if (!committee || /byråd|kommunalbestyrelse/i.test(committee)) return false;
+  const plan = String(story.snippet || story.content || "").match(/Behandlingsplan([\s\S]*)$/i);
+  return !!plan && /byråd|kommunalbestyrelse/i.test(plan[1]);
+}
+
+function newsletterSource_(story) {
+  if (!requiresLaterDecision_(story)) return story;
+  const source = Object.assign({}, story);
+  // Et gammelt AI-resumé må ikke overtrumfe originalens videre behandlingsplan.
+  delete source.tldr;
+  source.decisionStage = "Der er videre behandling i kildens behandlingsplan. Beskriv dette organs behandling og den videre proces; kald det ikke en endelig vedtagelse.";
+  return source;
+}
+
+function validateDecisionStage_(text, stories) {
+  const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9æøå]+/g, " ").trim();
+  const sentences = String(text).split(/[\n.!?]+/).map(normalize);
+  const generic = new Set(["endelig", "endeligt", "vedtagelse", "godkendelse", "indstilling", "behandling",
+    "behandlingsplan", "kommune", "kommunes", "kommunen", "middelfart", "kommunale", "vedrørende", "ændring", "orientering"]);
+  for (const story of stories) {
+    if (!requiresLaterDecision_(story)) continue;
+    const title = normalize(story.subject);
+    const topics = title.split(" ").filter(word => word.length >= 6 && !generic.has(word)).sort((a, b) => b.length - a.length);
+    if (!topics.length) continue; // Uklar emneidentitet kræver manuel kontrol.
+    const topic = topics[0].replace(/(?:erne|ene|et|en)$/, "");
+    const numberedPart = title.match(/(?:tillæg|lokalplan) \d+/);
+    const actor = normalize(story.committee);
+    for (const sentence of sentences) {
+      // Bind afvisningen til samme sætning og emne, ikke blot samme udvalg.
+      if (!sentence.includes(topic) || (numberedPart && !sentence.includes(numberedPart[0]))) continue;
+      let index = sentence.indexOf(actor);
+      while (index !== -1) {
+        const following = sentence.slice(index + actor.length, index + actor.length + 110);
+        if (/^ (?:har )?(?:nu )?(?:endeligt (?:vedtaget|godkendt)|godkendt den endelige vedtagelse)\b/.test(following)) {
+          throw new Error("Kladde overdriver et udvalgs beslutning til endelig vedtagelse trods videre behandlingsplan");
+        }
+        index = sentence.indexOf(actor, index + actor.length);
+      }
+    }
+  }
+}
+
 function generateNewsletterWithGemini_(apiKey, data) {
+  const decisionSources = [...(data.topStories || []), ...(data.mediumStories || []), ...(data.adminItems || [])];
+  data = Object.assign({}, data, { topStories: (data.topStories || []).map(newsletterSource_),
+    mediumStories: (data.mediumStories || []).map(newsletterSource_), adminItems: (data.adminItems || []).map(newsletterSource_) });
   const tz = Session.getScriptTimeZone();
   const now = new Date();
   const weekNum = Utilities.formatDate(now, tz, "w");
@@ -2321,7 +2401,8 @@ Skriv nyhedsbrevet nu — på dansk, fra hjertet, som SF Middelfart.
         temperature: 0.7,
         maxOutputTokens: 16384
       }
-    }, { label: "Nyhedsbrev", maxAttempts: 3, reserveMs: DOC_RESERVE_MS });
+    }, { label: "Nyhedsbrev", maxAttempts: 3, reserveMs: DOC_RESERVE_MS,
+      validateText: text => validateDecisionStage_(text, decisionSources) });
 
     if (res.finishReason !== "STOP") {
       console.log(`⚠️ Gemini stoppede med finishReason: ${res.finishReason} (forventet: STOP)`);

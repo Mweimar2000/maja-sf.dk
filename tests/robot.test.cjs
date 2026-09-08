@@ -30,7 +30,7 @@ for(const value of [{},{claims:[]},{claims:[{claim:'Beløb',verdict:'maybe',evid
  test('invalid fact check never green '+JSON.stringify(value),()=>{const h=harness([response(JSON.stringify(value))]);const result=h.context.factCheckNewsletter_('test-key','Budgettet er på 10 mio. kr.',gt);assert.ok(result.error || result.note);assert.doesNotMatch(h.context.formatFactCheckReport_(result),/✅/);});
 }
 test('counts are derived from verdicts, not model summary',()=>{const h=harness([response(JSON.stringify({summary:{verified:1,unverified:0,contradicted:0},claims:[{claim:'Budgettet er på 20 mio.',verdict:'contradicted',evidence:'Kommunen afsætter 10 mio. kr.',sourceIndex:1}]}))]);const r=h.context.factCheckNewsletter_('test-key','Budgettet er på 20 mio.',gt);assert.equal(r.summary.contradicted,1);assert.equal(r.summary.verified,0);});
-test('invented citation cannot verify',()=>{const h=harness([response(JSON.stringify({claims:[{claim:'Budget',verdict:'verified',evidence:'Kommunen afsætter 20 mio.',sourceIndex:1}]}))]);const r=h.context.factCheckNewsletter_('test-key','Budget',gt);assert.ok(r.error || r.summary.unverified>0);});
+test('invented citation cannot verify',()=>{const h=harness([response(JSON.stringify({claims:[{claim:'Budget',verdict:'verified',evidence:'Kommunen afsætter 20 mio.',sourceIndex:1}]}))]);const r=h.context.factCheckNewsletter_('test-key','Budget',gt);assert.ok(r.error || r.summary.unverified>0);assert.equal(r.claims[0].sourceIndex,null);assert.equal(r.claims[0].sourceUrl,'');});
 test('cached sources cannot make complete green check',()=>{const h=harness([response(JSON.stringify({claims:[{claim:'Budget',verdict:'verified',evidence:gt[0].freshText,sourceIndex:1}]}))]);const r=h.context.factCheckNewsletter_('test-key','Budget',[{...gt[0],sourceType:'firstagenda-cached'}]);assert.ok(r.error || r.note || r.summary.unverified>0);});
 test('model output is escaped when stored as spreadsheet text',()=>{const h=harness();const sheet={getRange:()=>({setValues:v=>h.writes.push(v)})};h.context.writeAnalysisRow_(sheet,2,{...good,ok:true,tldr:'=IMPORTXML("https://example.invalid","//a")'});assert.ok(!h.writes[0][0][0].startsWith('='));});
 test('HTTP 403 stops without switching models',()=>{const h=harness([{code:403,body:{error:{status:'PERMISSION_DENIED',message:'denied'}}}]);assert.equal(h.context.analyzeWithGemini_('test-key',{subject:'Budget',content:'tekst'}).ok,false);assert.equal(h.calls.length,1);});
@@ -113,4 +113,39 @@ test('ambiguous matches stay active and a shared source ID only supersedes the a
  assert.deepEqual(Array.from(h.context.supersededAgendaIndexes_([agenda,minutes])),[0]);
  minutes[5]='FA:new-meeting:new-point'; const alternative=minutes.slice(); alternative[5]='FA:other-meeting:other-point';
  assert.equal(h.context.supersededAgendaIndexes_([agenda,minutes,alternative]).size,0);
+});
+
+test('slow PDF fetch cannot prevent later original decision text from being collected',()=>{
+ const h=harness(); let budget=260000; const seen=[];
+ h.context.timeFor_=need=>budget>=need;
+ h.context.fetchMeetingAgenda_=(cookies,id)=>{seen.push('text:'+id);return [{Id:'point',IsOpen:true,Caption:id,Felter:[{Tekst:'Original decision for '+id,DocumentId:'06af11f4-c1da-41cb-9c8f-b8cc8554eb54'}],Bilag:[]}];};
+ h.context.fetchPdfFromUrl_=()=>{seen.push('pdf');budget-=180000;return {success:true,pdfBase64:'JVBERi0x'};};
+ const stories=['first','second'].map(id=>({subject:id,committee:'Udvalg',source:'FirstAgenda API',sourceId:'FA:'+id+':point',snippet:'Cached text'}));
+ const result=h.context.collectGroundTruth_(stories,'fixture');
+ assert.deepEqual(seen,['text:first','text:second','pdf']);
+ assert.match(result[1].freshText,/Original decision for second/); assert.equal(result[1].sourceType,'firstagenda');
+ assert.equal(result[1].incomplete,true,'Unfetched PDF remains explicitly incomplete');
+});
+test('known committee finality overclaim is rejected while source-based wording remains usable',()=>{
+ const h=harness(); const story={subject:'Tillæg 2 til spildevandsplanen',committee:'Klima- Natur og Genbrugsudvalget',tldr:'An old summary',snippet:'Godkendt. Behandlingsplan: Udvalg 2. september; Byrådet 28. september'};
+ assert.throws(()=>h.context.validateDecisionStage_('Klima-, Natur- og Genbrugsudvalget har nu endeligt vedtaget tillæg 2 til spildevandsplanen.',[story]));
+ assert.doesNotThrow(()=>h.context.validateDecisionStage_('Klima-, Natur- og Genbrugsudvalget har godkendt indstillingen. Sagen skal videre til Byrådet.',[story]));
+ assert.equal(h.context.newsletterSource_(story).tldr,undefined);assert.equal(story.tldr,'An old summary','Stored source is not mutated');
+ assert.doesNotThrow(()=>h.context.validateDecisionStage_('Byrådet har endeligt vedtaget tillægget.',[{...story,committee:'Byrådet'}]));
+});
+
+test('text collection reserves time for at least one fact-check request',()=>{
+ const h=harness([response(JSON.stringify({claims:[{claim:'First fact',verdict:'verified',evidence:'Original first fact',sourceIndex:1}]}))]);
+ let budget=200000; h.context.timeFor_=need=>budget>=need;
+ h.context.loadAnalysisSource_=row=>{budget-=60000;return {content:'Original '+row[3]+' fact',pdfBase64List:[]};};
+ const stories=['first','second'].map(id=>({subject:id,source:'FirstAgenda API',sourceId:'FA:'+id+':point',snippet:'Cached '+id+' fact'}));
+ const sources=h.context.collectGroundTruth_(stories,'fixture');
+ const result=h.context.factCheckNewsletter_('key','First fact',sources);
+ assert.equal(h.calls.length,1);assert.equal(result.summary.verified,1);assert.ok(result.note);
+});
+test('a pending case does not reject a final decision for another case from the same committee',()=>{
+ const h=harness();const pending={committee:'Klimaudvalget',subject:'Tillæg 2 til spildevandsplanen',snippet:'Behandlingsplan: Byrådet den 28. september.'};
+ const approved={committee:'Klimaudvalget',subject:'Affaldsprojektet',snippet:'Projektet er endeligt godkendt.'};
+ assert.doesNotThrow(()=>h.context.validateDecisionStage_('Klimaudvalget har endeligt godkendt affaldsprojektet.',[pending,approved]));
+ assert.doesNotThrow(()=>h.context.validateDecisionStage_('Klimaudvalget har endeligt godkendt tillæg 3 til spildevandsplanen.',[pending]));
 });

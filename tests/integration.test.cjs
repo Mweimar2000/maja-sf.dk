@@ -682,3 +682,18 @@ test('source citations survive both initial save and failed fact check without n
   assert.match(h.documents[0].text,/FAKTA-TJEK KUNNE IKKE KØRES/);
   assert.equal(h.mails.length,0);
 });
+
+test('a finality overclaim from the writing model triggers fallback before any draft is saved', t => {
+  const text='Godkendt. Behandlingsplan: Klimaudvalget den 2. september. Byrådet den 28. september.';
+  const source=item('cycle','Spildevandsplan',text), r=sourceRow(source); r[2]='Klimaudvalget';
+  const bad='Klimaudvalget har endeligt vedtaget spildevandsplanen. De bedste hilsner, SF Middelfart';
+  const good='Klimaudvalget har godkendt indstillingen. Sagen går videre til Byrådet. De bedste hilsner, SF Middelfart';
+  r[9]=bad;
+  const h=harness(t,[r]);h.agendas.set('council',[source]);
+  h.replies.push(bad,good,{claims:[{claim:'Sagen går videre til Byrådet.',verdict:'verified',evidence:'Byrådet den 28. september.',sourceIndex:1}]});
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length,1);assert.equal(h.modelCalls.length,3);
+  assert.match(h.fetches.filter(url=>url.startsWith('https://generativelanguage.googleapis.com'))[1],/gemini-3.6-flash/);
+  for (const saved of h.documents[0].saves) { assert.ok(saved.includes(good));assert.ok(!saved.includes(bad)); }
+  assert.equal(h.mails.length,0);assert.equal(h.rows[1][9],bad,'Stored history is preserved');
+});
