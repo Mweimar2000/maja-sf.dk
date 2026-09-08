@@ -637,3 +637,34 @@ test('newsletter repairs old point links without changing source dates, analysis
   assert.ok(h.writes.every(w=>w.column===7 && w.locked));
   assert.equal(h.modelCalls.length,0); assert.equal(h.mails.length,0);
 });
+
+test('published minutes supersede an old agenda ID for repair and newsletter without altering history', t => {
+  const source = item(); source.Felter[0].Tekst='PUNKT 51: Ny cykelsti\nSagsnr: 2026-123456\n'+GOOD.facts;
+  const minutes = sourceRow(source,{score:'',tldr:''});
+  const agenda = minutes.slice(); agenda[1]='Dagsorden'; agenda[5]='FA:obsolete-meeting:old-point';
+  const h = harness(t,[agenda,minutes]); h.agendas.set('council',[source]); h.replies.push(GOOD,DRAFT,CHECK);
+  h.run('dailyRepairAnalyses');
+  assert.ok(h.logs.some(x=>/1 repareret · 0 afventer/.test(x)));
+  assert.deepEqual(h.rows[1],agenda,'Historical agenda remains unchanged');
+  assert.equal(h.rows[2][13],4);
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.ok(h.logs.some(x=>/Fandt 1 sager fra denne uge/.test(x)));
+  assert.equal(h.documents.length,1); assert.equal(h.mails.length,0);
+  assert.ok(h.fetches.every(url=>!url.includes('obsolete-meeting')),'Never retry retired source IDs');
+});
+
+test('superseding an agenda never excludes an updated referat sharing its source ID under different metadata', t => {
+  const oldSource=item('cycle','Original title','PUNKT 51: Original title\nSagsnr: 2026-123456\n'+GOOD.facts);
+  const oldAgenda=sourceRow(oldSource,{score:'',tldr:''}); oldAgenda[1]='Dagsorden';
+  const updatedSource=item('cycle','Updated title','PUNKT 52: Updated title\nSagsnr: 2026-999999\n'+GOOD.facts);
+  const updatedMinutes=sourceRow(updatedSource,{score:'',tldr:''});
+  const matchingMinutes=sourceRow(oldSource,{score:'',tldr:''}); matchingMinutes[5]='FA:another-meeting:cycle';
+  const h=harness(t,[oldAgenda,updatedMinutes,matchingMinutes]);
+  h.agendas.set('council',[updatedSource]); h.agendas.set('another-meeting',[oldSource]);
+  h.replies.push(GOOD,GOOD,DRAFT,CHECK); h.run('dailyRepairAnalyses');
+  assert.equal(h.rows[1][13],''); assert.equal(h.rows[2][13],4); assert.equal(h.rows[3][13],4);
+  assert.ok(h.logs.some(x=>/2 repareret · 0 afventer/.test(x)));
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.ok(h.logs.some(x=>/Fandt 2 sager fra denne uge/.test(x)));
+  assert.equal(h.documents.length,1); assert.equal(h.mails.length,0);
+});

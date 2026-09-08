@@ -97,3 +97,20 @@ for (const pdf of [false, true]) {
   assert.equal(config.responseSchema.properties.score.type,'INTEGER');
  });
 }
+
+test('source version matching requires the same date, committee, title, point and case number',()=>{
+ const h=harness(); const agenda=row('2026-09-07','Same title'); agenda[1]='Dagsorden'; agenda[7]='PUNKT 51: Same title\nSagsnr: 2026-123456\nOriginal';
+ const minutes=agenda.slice(); minutes[1]='Referat'; minutes[5]='FA:new-meeting:new-point';
+ assert.deepEqual(Array.from(h.context.supersededAgendaIndexes_([agenda,minutes])),[0]);
+ for(const [column,value] of [[0,'2026-09-06'],[2,'Other committee'],[3,'Other title'],[7,'PUNKT 52: Same title\nSagsnr: 2026-123456'],[7,'PUNKT 51: Same title\nSagsnr: 2026-999999'],[7,'Missing identifiers'],[2,''],[3,' '],[7,'PUNKT 51: Same title\nSagsnr:\nBeslutning'],[7,'PUNKT 51: Same title\nSagsnr: \t\r\nBeslutning']]) {
+  const unrelated=minutes.slice(); unrelated[column]=value;
+  assert.equal(h.context.supersededAgendaIndexes_([agenda,unrelated]).size,0);
+ }
+});
+test('ambiguous matches stay active and a shared source ID only supersedes the agenda row',()=>{
+ const h=harness(); const agenda=row('2026-09-07','Same title'); agenda[1]='Dagsorden'; agenda[7]='PUNKT 51: Same title\nSagsnr: 2026-123456';
+ const minutes=agenda.slice(); minutes[1]='Referat';
+ assert.deepEqual(Array.from(h.context.supersededAgendaIndexes_([agenda,minutes])),[0]);
+ minutes[5]='FA:new-meeting:new-point'; const alternative=minutes.slice(); alternative[5]='FA:other-meeting:other-point';
+ assert.equal(h.context.supersededAgendaIndexes_([agenda,minutes,alternative]).size,0);
+});
