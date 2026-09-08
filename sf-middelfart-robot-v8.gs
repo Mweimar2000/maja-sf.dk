@@ -2198,7 +2198,7 @@ function validateDecisionStage_(text, stories) {
     const actor = normalize(story.committee);
     for (const sentence of sentences) {
       // Bind afvisningen til samme sætning og emne, ikke blot samme udvalg.
-      if (!sentence.includes(topic) || (numberedPart && !sentence.includes(numberedPart[0]))) continue;
+      if (!sentence.includes(topic) || (numberedPart && !(" " + sentence + " ").includes(" " + numberedPart[0] + " "))) continue;
       let index = sentence.indexOf(actor);
       while (index !== -1) {
         const following = sentence.slice(index + actor.length, index + actor.length + 110);

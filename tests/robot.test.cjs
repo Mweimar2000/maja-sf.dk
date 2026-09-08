@@ -147,5 +147,5 @@ test('a pending case does not reject a final decision for another case from the 
  const h=harness();const pending={committee:'Klimaudvalget',subject:'Tillæg 2 til spildevandsplanen',snippet:'Behandlingsplan: Byrådet den 28. september.'};
  const approved={committee:'Klimaudvalget',subject:'Affaldsprojektet',snippet:'Projektet er endeligt godkendt.'};
  assert.doesNotThrow(()=>h.context.validateDecisionStage_('Klimaudvalget har endeligt godkendt affaldsprojektet.',[pending,approved]));
- assert.doesNotThrow(()=>h.context.validateDecisionStage_('Klimaudvalget har endeligt godkendt tillæg 3 til spildevandsplanen.',[pending]));
+ for (const number of [3, 20, 21]) assert.doesNotThrow(()=>h.context.validateDecisionStage_(`Klimaudvalget har endeligt godkendt tillæg ${number} til spildevandsplanen.`,[pending]));
 });
