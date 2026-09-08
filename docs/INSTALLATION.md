@@ -11,19 +11,21 @@ Denne ændring er ikke automatisk installeret i Apps Script. Et merge på GitHub
 ## Indlæs og kontrollér
 
 1. Indlæs den opdaterede `sf-middelfart-robot-v8.gs` i den eksisterende kodefil. Undgå at oprette endnu en fil med de samme globale funktioner og konstanter. Bevar projektets manifest og Script Properties.
-2. Kontrollér `ROBOT_VERSION = "8.1.0-validation"`.
+2. Kontrollér `ROBOT_VERSION = "8.1.1-validation"`.
 3. Kør `debugTestGemini()`. Fejl på alle modeller skal løses før næste trin.
 4. Kør `debugDiagnoseSheet()` og notér antal sager uden gyldig analyse.
 5. Kør `testManualRun()` for indsamling. Den gemmer kilder; efteranalysen har sit eget tidsbudget.
 6. Kør `dailyRepairAnalyses()`, derefter `debugDiagnoseSheet()`. Gentag, mens antallet falder. Fejlede sager får en genforsøgspause på mindst 15 minutter, så én fejl ikke blokerer resten.
 7. Kør `testGenerateNewsletterWithoutEmail()` for en kladde uden notifikationsmail. Kontrollér dækning, kildecitater og advarsler. Funktionen opretter et dokument i den konfigurerede kladdemappe.
-8. Kontrollér de tre robottriggere: `dailyIngest`, `dailyRepairAnalyses`, `generateWeeklyDraft`. Hvis de mangler eller skal genoprettes, kør `setupOnce_createTriggers()`. Den erstatter kun triggere med disse tre navne; øvrige projekttriggere bevares.
+8. Efter driftskontrollen: kør `setupOnce_createTriggers()` én gang for at opdatere de tre robottriggere, også hvis deres navne allerede findes. Indsamling ligger kl. 09-10, analyse kl. 11-12 og lørdagskladden kl. 13-14 i projektets tidszone. Afstanden tager højde for Googles valg af minut inden for timen og kørslens varighed. Den tidligere analyse kl. 14 lå efter kladden. Funktionen erstatter kun `dailyIngest`, `dailyRepairAnalyses` og `generateWeeklyDraft`; øvrige projekttriggere bevares.
 
 ## Indstillinger
 
 De eksisterende properties bruges fortsat: `SPREADSHEET_ID`, `INBOX_SHEET_NAME`, `INBOX_LABEL`, `GEMINI_API_KEY` og `DRAFT_FOLDER_ID`.
 
 `SOURCE_HOSTS` kan indeholde yderligere godkendte værtsnavne adskilt af komma. Standardlisten er `middelfart.dk`, `www.middelfart.dk`, `dagsordener.middelfart.dk`, `sf.dk` og `www.sf.dk`. FirstAgendas signerede PDF-rute på `staticresources.firstagenda.com/api/v1/signed/` tillades også. Automatisk hentning kræver HTTPS; afmeldingslinks blokeres også ved omdirigeringer. Udvid kun listen med konkrete kendte dokumentkilder.
+
+For emails bevarer A den faktiske modtagelsesdato, mens P registrerer første indlæsning. Kun mails, der var højst syv dage gamle ved indlæsningen, kan bæres til næste kladde efter en weekendgrænse; ældre arkivmails bliver ikke til aktuelle nyheder.
 
 `FA_SCAN_NEXT_ID`, `GMAIL_SCAN_OFFSET` og `ANALYSIS_RETRY_*` styres af robotten. De muliggør genoptagelse og pauser mellem genforsøg. Der gemmes ingen API-nøgler eller PDF-indhold i disse nye properties.
 
@@ -39,3 +41,5 @@ De eksisterende properties bruges fortsat: `SPREADSHEET_ID`, `INBOX_SHEET_NAME`,
 ## Tilbagerulning
 
 Gendan den gemte kode fra før installationen, hvis en driftskontrol fejler. Bevar regnearksbackuppen og P-Q, indtil data er sammenlignet; slet ikke kilder eller analyser for at nulstille robotten. Kør ikke den ældre kode automatisk over opdaterede data, før konsekvenserne er vurderet.
+
+[Googles dokumentation om tidsstyrede triggere](https://developers.google.com/apps-script/guides/triggers/installable#time-driven_triggers) beskriver det varierende minut inden for den valgte time.

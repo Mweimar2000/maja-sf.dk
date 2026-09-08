@@ -10,7 +10,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 
-const SOURCE = fs.readFileSync(path.join(__dirname, '../sf-middelfart-robot-v8.gs'), 'utf8');
+const SOURCE = fs.readFileSync(process.env.ROBOT_SOURCE || path.join(__dirname, '../sf-middelfart-robot-v8.gs'), 'utf8');
 const NOW = Date.parse('2026-09-08T12:00:00Z');
 const DAY = 86400000;
 const FA = 'https://dagsordener.middelfart.dk';
@@ -25,6 +25,7 @@ const CHECK = { claims: [{
   evidence: 'Kommunen anlægger en cykelsti.', sourceIndex: 1
 }] };
 const PUBLIC_ENTRIES = new Set([
+  'setupOnce_createTriggers',
   'dailyIngest', 'ingestFromFirstAgendaApi', 'ingestInboxEmails',
   'dailyRepairAnalyses', 'reanalyzeAllRows', 'generateWeeklyDraft', 'testGenerateNewsletterWithoutEmail'
 ]);
@@ -66,7 +67,7 @@ function harness(t, rows = []) {
     now: NOW, rows: [Array(17).fill(''), ...structuredClone(rows)], maxColumns: 17,
     meetings: [], agendas: new Map(), threads: [], labelExists: true,
     writes: [], propertyWrites: [], pages: [], fetches: [], modelCalls: [],
-    replies: [], documents: [], mails: [], logs: [], unexpected: [], lockEvents: [],
+    replies: [], documents: [], mails: [], logs: [], unexpected: [], lockEvents: [], triggers: [],
     owner: null, beforeWrite: null, afterWrite: null,
     properties: new Map(Object.entries({
       SPREADSHEET_ID: 'fixture-sheet', INBOX_SHEET_NAME: 'Inbox',
@@ -175,6 +176,22 @@ function harness(t, rows = []) {
           }
         };
       } },
+      ScriptApp: {
+        WeekDay: { SATURDAY: 'SATURDAY' },
+        getProjectTriggers: () => h.triggers.slice(),
+        deleteTrigger: trigger => { h.triggers.splice(h.triggers.indexOf(trigger), 1); },
+        newTrigger(handler) {
+          const trigger = { handler, getHandlerFunction() { return this.handler; } };
+          const builder = {
+            timeBased() { return this; },
+            everyDays(days) { trigger.days = days; return this; },
+            atHour(hour) { trigger.hour = hour; return this; },
+            onWeekDay(day) { trigger.day = day; return this; },
+            create() { h.triggers.push(trigger); return trigger; }
+          };
+          return builder;
+        }
+      },
       SpreadsheetApp: { openById(id) {
         assert.equal(id, 'fixture-sheet');
         return { getSheetByName: name => name === 'Inbox' ? sheet : null };
@@ -420,7 +437,8 @@ test('concurrent FirstAgenda and Gmail ingestion cannot overwrite each other’s
   assert.ok(h.writes.every(write => write.locked), 'All sheet mutations occur while owning the shared lock');
 });
 
-for (const entry of PUBLIC_ENTRIES) {
+// Trigger setup does not touch the Sheets/analysis state guarded by this lock.
+for (const entry of [...PUBLIC_ENTRIES].filter(entry => entry !== 'setupOnce_createTriggers')) {
   test(`${entry} leaves shared state untouched while another execution owns the lock`, t => {
     const h = harness(t, [sourceRow(item())]);
     h.threads = [thread(message('must-wait'))];
@@ -497,5 +515,85 @@ test('manual draft verification creates the document without sending any email',
   h.run('testGenerateNewsletterWithoutEmail');
   assert.equal(h.documents.length, 1);
   assert.equal(h.documents[0].saves.length, 2);
+  assert.equal(h.mails.length, 0);
+});
+
+
+test('scheduled ingestion and repair finish before Saturday newsletter even with trigger jitter', t => {
+  const h = harness(t);
+  const unrelated = { handler: 'otherProjectTask', getHandlerFunction() { return this.handler; } };
+  h.triggers.push(unrelated);
+  h.run('setupOnce_createTriggers');
+  assert.ok(h.triggers.includes(unrelated), 'Unrelated triggers must survive installation');
+  const byName = Object.fromEntries(h.triggers.map(trigger => [trigger.handler, trigger]));
+  const ingest = byName.dailyIngest, repair = byName.dailyRepairAnalyses, draft = byName.generateWeeklyDraft;
+  // Apps Script may choose any minute within atHour's one-hour window.
+  // Leave an additional six minutes for the preceding execution to finish.
+  assert.ok(ingest.hour + 1 + 6 / 60 < repair.hour, 'Ingestion must finish before repair starts');
+  assert.ok(repair.hour + 1 + 6 / 60 < draft.hour, 'Repair must finish before the newsletter starts');
+  assert.equal(draft.day, 'SATURDAY');
+  assert.equal(draft.hour, 13, 'Preserve the existing weekly delivery hour');
+  const saturday = Date.parse('2026-09-12T00:00:00Z');
+  h.now = saturday + (ingest.hour + 1) * 3600000 - 1;
+  h.meetings = [{ Id: 'council', Dato: new Date(h.now).toISOString(), Afsluttet: true }];
+  h.agendas.set('council', [item()]);
+  h.run('dailyIngest');
+  assert.equal(h.rows[1][13], '', 'The ingestion phase alone has no analysis');
+  h.now = saturday + repair.hour * 3600000;
+  h.replies.push(GOOD);
+  h.run('dailyRepairAnalyses');
+  assert.equal(h.rows[1][13], 4);
+  h.now = saturday + draft.hour * 3600000;
+  h.replies.push(DRAFT, CHECK);
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length, 1);
+  assert.match(h.documents[0].text, /Kommunen anlægger en cykelsti/);
+  assert.equal(h.mails.length, 0);
+});
+
+for (const legacyImportTimestamp of [false, true]) {
+  test(`historical mail stays outside weekly news after ingestion and analysis (legacy timestamp: ${legacyImportTimestamp})`, t => {
+    const h = harness(t);
+    const old = message('historical-email', 200);
+    old.getPlainBody = () => GOOD.facts;
+    h.threads = [thread(old)];
+    h.run('ingestInboxEmails');
+    if (legacyImportTimestamp) h.rows[1][15] = new Date(NOW).toISOString();
+    h.replies.push(GOOD, DRAFT, CHECK);
+    h.run('dailyRepairAnalyses');
+    assert.equal(h.rows[1][13], 4, 'Historical sources remain available for analysis');
+    h.run('testGenerateNewsletterWithoutEmail');
+    assert.equal(h.documents.length, 0, 'Importing or analysing an old message must not make it current news');
+    assert.equal(h.modelCalls.length, 1, 'No newsletter or fact-check call for historical-only material');
+    assert.equal(h.mails.length, 0);
+  });
+}
+
+
+test('mail arriving after Saturday collection appears next week exactly once with its original date', t => {
+  const h = harness(t);
+  h.now = Date.parse('2026-09-12T09:00:00Z');
+  h.run('ingestInboxEmails');
+  h.now = Date.parse('2026-09-12T13:00:00Z');
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length, 0);
+  const late = message('saturday-afternoon');
+  late.getDate = () => new Date('2026-09-12T12:30:00Z');
+  late.getPlainBody = () => GOOD.facts;
+  h.threads = [thread(late)];
+  h.now = Date.parse('2026-09-13T09:00:00Z');
+  h.run('ingestInboxEmails');
+  h.replies.push(GOOD);
+  h.now = Date.parse('2026-09-13T11:00:00Z');
+  h.run('dailyRepairAnalyses');
+  assert.equal(h.rows[1][13], 4);
+  assert.equal(h.rows[1][0], '2026-09-12 12:30', 'Preserve the actual email date');
+  h.now = Date.parse('2026-09-19T13:00:00Z');
+  h.replies.push(DRAFT, CHECK);
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length, 1, 'Carry recently received but not yet collected mail across the weekly boundary');
+  h.now = Date.parse('2026-09-26T13:00:00Z');
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length, 1, 'Do not publish the carried source again in another week');
   assert.equal(h.mails.length, 0);
 });

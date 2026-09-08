@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.0-validation";
+const ROBOT_VERSION = "8.1.1-validation";
 const CFG = {
   // Script Properties keys
   P_SHEET_ID:        "SPREADSHEET_ID",
@@ -243,19 +243,21 @@ function setupOnce_createTriggers() {
   ScriptApp.getProjectTriggers().filter(t => handlers.includes(t.getHandlerFunction()))
     .forEach(t => ScriptApp.deleteTrigger(t));
 
-  // Daglig indsamling kl. 12:00 (primær: FirstAgenda API)
+  // To timers afstand giver plads til Googles tilfældige minut og køretiden.
+  // Begge daglige faser skal være færdige inden lørdagskladden kl. 13.
+  // Daglig indsamling kl. 09:00 (primær: FirstAgenda API)
   ScriptApp.newTrigger("dailyIngest")
     .timeBased()
     .everyDays(1)
-    .atHour(12)
+    .atHour(9)
     .create();
 
-  // Daglig efteranalyse kl. 14:00 — reparerer rækker uden analyse i sit
+  // Daglig efteranalyse kl. 11:00 — reparerer rækker uden analyse i sit
   // EGET 6-minutters vindue, så den ikke konkurrerer med indsamlingen
   ScriptApp.newTrigger("dailyRepairAnalyses")
     .timeBased()
     .everyDays(1)
-    .atHour(14)
+    .atHour(11)
     .create();
 
   // Ugentligt nyhedsbrev lørdag kl. 13:00
@@ -266,8 +268,8 @@ function setupOnce_createTriggers() {
     .create();
 
   console.log(`✅ ${ROBOT_VERSION} Presse-Robot er klar!`);
-  console.log("📡 Daglig indsamling: Hver dag kl. 12:00 (FirstAgenda API + email)");
-  console.log("🔧 Daglig efteranalyse: Hver dag kl. 14:00 (reparerer manglende analyser)");
+  console.log("📡 Daglig indsamling: Hver dag kl. 09:00 (FirstAgenda API + email)");
+  console.log("🔧 Daglig efteranalyse: Hver dag kl. 11:00 (reparerer manglende analyser)");
   console.log("📰 Ugentligt nyhedsbrev: Lørdag kl. 13:00");
 }
 
@@ -695,6 +697,7 @@ function ingestInboxEmailsLocked_() {
       if (ids.has(String(msg.getId()))) continue;
       if (!timeFor_(30000)) { completed = false; break; }
       const row = processMessage_(msg, Session.getScriptTimeZone());
+      // A bevarer modtagelsen; P registrerer første indlæsning (ID-dedup).
       row.push(new Date().toISOString(), sourceFingerprint_(row.slice(0,9)));
       sheet.getRange(sheet.getLastRow()+1, 1, 1, 17).setValues([row.map(sheetText_)]);
       ids.add(String(msg.getId()));
@@ -1121,7 +1124,7 @@ function analyzePendingRows_(sheet, reserveMs) {
 
 /** Kildeændringsdato bruges ved nye/opdaterede sager; mødedato bevares i A. */
 function sourceDateMs_(row) {
-  const d = parseDate_(row[15] || row[0]);
+  const d = sourceNewsDate_(row);
   return d ? d.getTime() : 0;
 }
 
@@ -1247,6 +1250,19 @@ function validateAnalysisText_(text) {
 
 function isAnalysisError_(text) {
   return /^(analyse fejlede|kunne ikke analyseres)(?:\b|$)/i.test(String(text || "").trim());
+}
+
+/** Nyhedsudvælgelse: kildeoffentliggørelse eller første indlæsning af en aktuel mail. */
+function sourceNewsDate_(row) {
+  if (/^FA:/.test(String(row[5] || ""))) return parseDate_(row[15] || row[0]);
+  const received = parseDate_(row[0]);
+  const firstSeen = parseDate_(row[15]);
+  // En aktuel mail kan først blive hentet efter lørdagskladden. Bevar den
+  // til næste uge uden at ændre dens faktiske modtagelsesdato i A.
+  // Arkivmails, der allerede var over en uge gamle ved indlæsning, får
+  // aldrig ny nyhedsstatus alene på grund af import eller reparation.
+  const ageAtImport = received && firstSeen ? firstSeen.getTime() - received.getTime() : -1;
+  return ageAtImport >= 0 && ageAtImport <= 7 * 86400000 ? firstSeen : received;
 }
 
 /** Fælles klassifikation til udvælgelse, reparation og diagnose. */
@@ -1766,7 +1782,7 @@ function generateWeeklyDraftLocked_(options) {
       // Number(row[13]) || 1 gjorde uanalyserede sager til administrative.
       return {
         sheetRow:     idx + 2,
-        date:         parseDate_(row[15] || row[0]),
+        date:         sourceNewsDate_(row),
         meetingDate:  row[0],
         type:         row[1],
         committee:    row[2],
@@ -2454,7 +2470,7 @@ function debugDiagnoseSheet() {
   for (const row of data) {
     const score = String(row[13]).trim();
     const tldr  = String(row[9]).trim();
-    const d     = parseDate_(row[15] || row[0]);
+    const d     = sourceNewsDate_(row);
     const iUge  = d && d >= weekAgo && d <= now;
     if (iUge) denneUge++;
 
