@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.1-validation";
+const ROBOT_VERSION = "8.1.2-validation";
 const CFG = {
   // Script Properties keys
   P_SHEET_ID:        "SPREADSHEET_ID",
@@ -423,6 +423,7 @@ function ingestFirstAgendaLocked_() {
     .getSheetByName(props.getProperty(CFG.P_SHEET_NAME) || "Inbox");
   if (!sheet) throw new Error("Indbakke-arket findes ikke");
   ensureSourceColumns_(sheet);
+  repairFirstAgendaSourceLinks_(sheet);
   const cookies = authenticateFirstAgenda_();
   const committees = fetchCommitteeList_(cookies);
   const now = new Date();
@@ -466,7 +467,7 @@ function ingestFirstAgendaLocked_() {
         // Kilde og nulstilling gemmes SAMLET, før et langsomt modelkald.
         const row = [Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm"),
           type, committee.name, title, "FirstAgenda API", id,
-          `${CFG.FA_BASE_URL}/Vis/${type}/${meeting.Id}`, content.slice(0, 45000), names,
+          firstAgendaSourceUrl_(id), content.slice(0, 45000), names,
           "", "", "", "", "", "", (old ? now : (parseDate_(meeting.ReleasedDate) || date)).toISOString(), fingerprint];
         sheet.getRange(rowIndex, 1, 1, 17).setValues([row.map(sheetText_)]);
         existing.set(id, {row, index:rowIndex}); updated++;
@@ -479,6 +480,32 @@ function ingestFirstAgendaLocked_() {
     else props.setProperty("FA_SCAN_NEXT_ID", String(ordered[i+1].meeting.Id));
   }
   console.log(`📡 ${ROBOT_VERSION}: ${updated} nye/ændrede kildepunkter gemt; analyse følger separat`);
+}
+
+/** Den offentlige klient bruger /vis?id=...&punktid=..., også for referater. */
+function firstAgendaSourceUrl_(sourceId) {
+  const ids = String(sourceId || "").split(":");
+  if (ids.length !== 3 || ids[0] !== "FA" || !ids[1] || !ids[2]) return "";
+  return `${CFG.FA_BASE_URL}/vis?id=${encodeURIComponent(ids[1])}&punktid=${encodeURIComponent(ids[2])}`;
+}
+
+/** Ret kun G i sammenhængende grupper; bevar datoer, analyser og øvrige kilder. */
+function repairFirstAgendaSourceLinks_(sheet) {
+  const rows = sheet.getDataRange().getValues().slice(1);
+  let groupStart = 0, values = [], changed = 0;
+  const flush = () => {
+    if (values.length) sheet.getRange(groupStart, 7, values.length, 1).setValues(values);
+    values = [];
+  };
+  rows.forEach((row, i) => {
+    const url = row[4] === "FirstAgenda API" ? firstAgendaSourceUrl_(row[5]) : "";
+    if (url && row[6] !== url) {
+      if (!values.length) groupStart = i + 2;
+      values.push([url]); changed++;
+    } else flush();
+  });
+  flush();
+  if (changed) console.log(`🔗 ${changed} FirstAgenda-kildelinks rettet`);
 }
 
 function ensureSourceColumns_(sheet) {
@@ -1092,9 +1119,17 @@ function analyzePendingRows_(sheet, reserveMs) {
   const props = PropertiesService.getScriptProperties();
   const apiKey = mustGet_(props, CFG.P_API_KEY);
   const data = sheet.getDataRange().getValues().slice(1);
-  const pending = data.map((row, i) => ({ row, sheetRow: i + 2 }))
-    .filter(x => analysisScore_(x.row) === null)
-    .sort((a, b) => sourceDateMs_(b.row) - sourceDateMs_(a.row) || b.sheetRow - a.sheetRow);
+  const nowMs = Date.now(), weekStartMs = nowMs - 7 * 86400000;
+  const pending = data.map((row, i) => {
+    const sourceTime = sourceDateMs_(row), originalDate = parseDate_(row[0]);
+    // Aktuelle møder/mails først. En ny offentliggørelsesdato på et gammelt
+    // arkivmøde må ikke optage hele kørslen foran ugens uanalyserede sager.
+    const currentPeriod = !!originalDate && originalDate.getTime() >= weekStartMs
+      && sourceTime >= weekStartMs && sourceTime <= nowMs;
+    return { row, sheetRow: i + 2, sourceTime, currentPeriod };
+  }).filter(x => analysisScore_(x.row) === null)
+    .sort((a, b) => Number(b.currentPeriod) - Number(a.currentPeriod)
+      || b.sourceTime - a.sourceTime || b.sheetRow - a.sheetRow);
   let fixed = 0;
   const cache = {};
   for (const item of pending) {
@@ -1131,7 +1166,8 @@ function sourceDateMs_(row) {
 /** Samme originale input til første analyse og reparation; aldrig et AI-resumé. */
 function loadAnalysisSource_(row, cache) {
   cache = cache || {};
-  const result = { subject: row[3], committee: row[2], sourceType: row[1], content: row[7] || "", pdfBase64List: [] };
+  const result = { subject: row[3], committee: row[2], sourceType: row[1],
+    originalDate: row[0], sourceRecordedAt: row[15], content: row[7] || "", pdfBase64List: [] };
   if (row[4] === "FirstAgenda API") {
     const ids = String(row[5]).split(":");
     if (ids.length !== 3) throw new Error("Ugyldigt FirstAgenda-ID");
@@ -1240,7 +1276,9 @@ function validateAnalysisText_(text) {
   const result = { score: value.score };
   for (const key of ["tldr", "sfAnalysis", "facts", "amounts", "programMatch"]) {
     if (typeof value[key] !== "string" || !value[key].trim() || value[key].length > 45000) {
-      throw new Error(`Ugyldig analyse: ${key} mangler eller har forkert type/længde`);
+      const fieldType = Array.isArray(value[key]) ? "array" : typeof value[key];
+      const fieldLength = typeof value[key] === "string" || Array.isArray(value[key]) ? value[key].length : 0;
+      throw new Error(`Ugyldig analyse: ${key} mangler eller har forkert type/længde (type=${fieldType}, længde=${fieldLength})`);
     }
     result[key] = value[key].trim();
   }
@@ -1312,6 +1350,9 @@ DOKUMENT:
 Udvalg: ${data.committee}
 Emne: ${data.subject}
 Type: ${data.sourceType || "Ikke angivet"} — skeln mellem forslag og endelige beslutninger.
+Oprindelig møde-/modtagelsesdato: ${data.originalDate || "Ikke angivet"}
+Kilden registreret/offentliggjort: ${data.sourceRecordedAt || "Ikke angivet"}
+En ny offentliggørelse eller indlæsning gør IKKE en ældre beslutning til en beslutning fra denne uge.
 Indhold: ${data.content || ""}
 ${data.pdfBase64 || (data.pdfBase64List || []).length ? "(PDF-bilag vedhæftet — læs også disse)" : ""}
 
@@ -1488,11 +1529,28 @@ function geminiFetchModel_(apiKey, model, payload, label, maxAttempts, reserveMs
  * Kalder Gemini API med tekst. Returnerer rå tekst (JSON-streng) — den
  * kontrakt som analyzeWithGemini_/parseJsonSafe_ bygger på.
  */
+/** Native outputskema supplerer altid den lokale validering. */
+function analysisResponseSchema_() {
+  const descriptions = {
+    tldr: "Kort faktuelt resumé i én tekststreng.",
+    sfAnalysis: "SF-temarelevans i én tekststreng; ingen udokumenteret SF-stemmeafgivning.",
+    facts: "Konkrete fakta fra kilden som én tekststreng, aldrig en array. Skriv Ikke angivet hvis ingen fakta kan udledes.",
+    amounts: "Dokumenterede beløb og tal som én tekststreng. Skriv Ikke angivet hvis de mangler.",
+    programMatch: "Generelt SF-temamatch som én tekststreng. Skriv Ikke angivet hvis intet match findes."
+  };
+  const properties = {};
+  Object.keys(descriptions).forEach(key => { properties[key] = { type: "STRING", description: descriptions[key] }; });
+  properties.score = { type: "INTEGER", description: "Heltallig relevansscore fra 1 til 5." };
+  return { type: "OBJECT", properties,
+    required: ["tldr", "sfAnalysis", "facts", "amounts", "score", "programMatch"] };
+}
+
 function callGeminiJson_(apiKey, prompt, opts) {
   return geminiFetch_(apiKey, {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: "application/json",
+      responseSchema: analysisResponseSchema_(),
       temperature: 0.2,
       maxOutputTokens: CFG.ANALYSIS_MAX_TOKENS
     }
@@ -1513,6 +1571,7 @@ function callGeminiWithPdf_(apiKey, prompt, pdfBase64, opts) {
     }],
     generationConfig: {
       responseMimeType: "application/json",
+      responseSchema: analysisResponseSchema_(),
       temperature: 0.2,
       maxOutputTokens: CFG.ANALYSIS_MAX_TOKENS
     }
@@ -1765,6 +1824,8 @@ function generateWeeklyDraftLocked_(options) {
   // Hentes tidligt: en manglende property skal fejle FØR vi bruger et Gemini-kald
   const folderId = mustGet_(props, CFG.P_DRAFT_FOLDER_ID);
 
+  // Ret historiske kildelinks uden at genanalysere eller genudgive kilderne.
+  repairFirstAgendaSourceLinks_(sheet);
   // Hent alle data
   const all = sheet.getDataRange().getValues();
   if (all.length < 2) {
@@ -2053,6 +2114,9 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
   eller facts fra din egen viden — heller ikke når du forsøger at ramme
   SF-tonen. Du må IKKE supplere med viden om systemer, organisationer
   eller historik der IKKE fremgår af data.
+* Brug meetingDate som den oprindelige møde-/modtagelsesdato. En nyere
+  indlæsnings- eller offentliggørelsesdato gør ikke en arkivsag til en ny
+  beslutning. Omtal ældre møder tydeligt som ældre eller sent offentliggjorte.
 * Skriv kun "vi stemte", "SF foreslog" eller tilsvarende, hvis der er konkret
   kildebelæg for netop SF's handling. Et SF-temamatch er ikke et bevis.
 * Følelser og SF-værdier er tilladt. Konkrete facts er KUN tilladt hvis

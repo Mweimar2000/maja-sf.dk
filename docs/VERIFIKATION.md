@@ -24,9 +24,9 @@ npm test
 
 Der kræves ingen pakkeinstallation. Testene indlæser hele Apps Script-filen i en isoleret JavaScript-kontekst med simulerede tjenester og deaktiveret dynamisk kodegenerering. Koden kan ikke tilgå Node-moduler, miljøvariabler eller rigtige Google-konti fra testkonteksten.
 
-Den første pakke på 20 kontroller gav 18 fejl mod Claude-versionen `df0b6394ab853e3864dec132913c07224fd9de75`, og alle 20 bestod efter rettelse. Flere tests er siden tilføjet for indsamling og genforsøg. **Seneste lokale kørsel: 67/67 bestået** (Node 24.19.0). `node --test` viser det aktuelle samlede antal.
+Den første pakke på 20 kontroller gav 18 fejl mod Claude-versionen `df0b6394ab853e3864dec132913c07224fd9de75`, og alle 20 bestod efter rettelse. Flere tests er siden tilføjet for indsamling og genforsøg. **Seneste lokale kørsel: 72/72 bestået** (Node 24.19.0). `node --test` viser det aktuelle samlede antal.
 
-Den separate integrationstest blev skrevet af en subagent og gennemgået ved integration. En uafhængig gennemgang af alle 11 ændrede filer blev gennemført 8. september 2026. Den fandt to fejl: analysen var planlagt efter lørdagskladden, og historiske emails fik indlæsningsdato som nyhedsdato. Tre nye integrationstests reproducerede fejlene før rettelse. I `8.1.1-validation` kører indsamling og analyse før kladden, og mails beholder deres faktiske modtagelsesdato i A. En mail, der var højst syv dage gammel ved første indlæsning i P, kan bæres frem til den følgende kladde. Arkivmails bliver ikke aktuelle alene ved import eller reparation, heller ikke med en nyere dato i P. En fjerde regressionstest dækker lørdagsmail efter indsamlingen: den kommer med ugen efter uden at blive gentaget endnu en uge senere. Sene FirstAgenda-offentliggørelser bruger fortsat deres særskilte kildedato.
+Den separate integrationstest blev skrevet af en subagent og gennemgået ved integration. En uafhængig gennemgang af alle 11 ændrede filer blev gennemført 8. september 2026. Den fandt to fejl: analysen var planlagt efter lørdagskladden, og historiske emails fik indlæsningsdato som nyhedsdato. Tre nye integrationstests reproducerede fejlene før rettelse. I `8.1.2-validation` kører indsamling og analyse før kladden, og mails beholder deres faktiske modtagelsesdato i A. En mail, der var højst syv dage gammel ved første indlæsning i P, kan bæres frem til den følgende kladde. Arkivmails bliver ikke aktuelle alene ved import eller reparation, heller ikke med en nyere dato i P. En fjerde regressionstest dækker lørdagsmail efter indsamlingen: den kommer med ugen efter uden at blive gentaget endnu en uge senere. Sene FirstAgenda-offentliggørelser bruger fortsat deres særskilte kildedato.
 
 ## Kontrolleret driftsbevis
 
@@ -53,3 +53,11 @@ Den separate integrationstest blev skrevet af en subagent og gennemgået ved int
 - [Apps Script projects.getContent](https://developers.google.com/apps-script/api/reference/rest/v1/projects/getContent): kildekode skal læses via Apps Script API eller editoren; Drive-metadata beviser ikke versionsidentitet.
 
 - [FirstAgenda offentlig klient](https://dagsordener.middelfart.dk/dist/js/vis.2d1ff8215da6f675bb40.js): de observerede ruter for `Felter[].DocumentId` og `Bilag[].Id`. Begge PDF-typer blev hentet fra en offentlig budgetsag den 8. september 2026; testene bruger samme skema, men ikke signed URL-tokens.
+
+## Opfølgning på driftsprøven
+
+PDF-kald i driftsprøven ramte HTTP 429/503, og flere reservesvar blev afvist på faktafeltets type eller indhold. Version 8.1.2 sender derfor et native svarskema for både tekst og PDF-analyser; den lokale validering er fortsat afgørende. Aktuelle møder/mails prioriteres foran nyligt genoffentliggjorte arkivsager. Oprindelige datoer sendes med til modellen og skal bevares i teksten. Tre ekstra regressionstests dækker disse forhold. Dette ændrer ikke modelvalg og er ikke en modelbenchmark.
+
+Schema-feltet følger [generateContent-reference](https://ai.google.dev/api/generate-content#v1beta.GenerationConfig); robotten bruger fortsat sin eksisterende generateContent-transport.
+
+FirstAgenda-kildelinks er ændret til kommunens observerede offentlige punkt-rute `/vis?id=...&punktid=...`. Eksisterende links rettes i G ved indsamling og kladdedannelse uden at ændre dato, analyse eller nyhedsstatus. Den rettede rute svarede HTTP 200 i driftskontrollen; den gamle `/Vis/Referat/...` svarede 404. To regressionstests dækker nye og gamle links samt bevarelse af mailkilder.

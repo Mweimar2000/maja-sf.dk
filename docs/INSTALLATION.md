@@ -11,7 +11,7 @@ Denne ændring er ikke automatisk installeret i Apps Script. Et merge på GitHub
 ## Indlæs og kontrollér
 
 1. Indlæs den opdaterede `sf-middelfart-robot-v8.gs` i den eksisterende kodefil. Undgå at oprette endnu en fil med de samme globale funktioner og konstanter. Bevar projektets manifest og Script Properties.
-2. Kontrollér `ROBOT_VERSION = "8.1.1-validation"`.
+2. Kontrollér `ROBOT_VERSION = "8.1.2-validation"`.
 3. Kør `debugTestGemini()`. Fejl på alle modeller skal løses før næste trin.
 4. Kør `debugDiagnoseSheet()` og notér antal sager uden gyldig analyse.
 5. Kør `testManualRun()` for indsamling. Den gemmer kilder; efteranalysen har sit eget tidsbudget.

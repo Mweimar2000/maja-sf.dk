@@ -80,3 +80,20 @@ test('failed newest source is deferred so subsequent repair reaches next source'
 });
 test('unsupported email document is reported incomplete',()=>{const h=harness();const result=h.context.processAttachments_({getAttachments:()=>[{getName:()=> 'budget.docx',getSize:()=>1000}]});assert.equal(result.incomplete,true);});
 test('incomplete source cannot generate a relevance score',()=>{const h=harness([response(JSON.stringify(good))]);assert.equal(h.context.analyzeWithGemini_('key',{subject:'x',content:'text',sourceIncomplete:true}).ok,false);assert.equal(h.calls.length,0);});
+
+for (const pdf of [false, true]) {
+ test(`analysis requests an API-enforced schema for ${pdf ? 'PDF' : 'text'} input`, () => {
+  const h = harness([response(JSON.stringify(good))]);
+  const data = {subject:'Budget',content:'10 mio. kr.'};
+  if (pdf) data.pdfBase64List = [{data:'JVBERi0x'}];
+  assert.equal(h.context.analyzeWithGemini_('test-key',data).ok,true);
+  const config = JSON.parse(h.calls[0].opts.payload).generationConfig;
+  assert.ok(config.responseSchema, 'JSON MIME type alone does not enforce the field contract');
+  assert.equal(config.responseSchema.type,'OBJECT');
+  for (const key of ['tldr','sfAnalysis','facts','amounts','programMatch']) {
+   assert.ok(config.responseSchema.required.includes(key));
+   assert.equal(config.responseSchema.properties[key].type,'STRING');
+  }
+  assert.equal(config.responseSchema.properties.score.type,'INTEGER');
+ });
+}

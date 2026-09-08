@@ -597,3 +597,43 @@ test('mail arriving after Saturday collection appears next week exactly once wit
   assert.equal(h.documents.length, 1, 'Do not publish the carried source again in another week');
   assert.equal(h.mails.length, 0);
 });
+
+test('current-period source repair precedes newly republished archive meetings and keeps original dates', t => {
+  const current = item('current-period','Aktuel kommunal sag');
+  const archive = item('archive','Genoffentliggjort arkivsag');
+  const currentRow = sourceRow(current,{score:'',tldr:''});
+  const archiveRow = sourceRow(archive,{score:'',tldr:''});
+  archiveRow[0] = '2025-08-15 12:00';
+  archiveRow[15] = new Date(NOW).toISOString();
+  const h = harness(t,[currentRow,archiveRow]);
+  h.agendas.set('council',[current,archive]);
+  h.replies.push(GOOD,GOOD);
+  h.run('dailyRepairAnalyses');
+  assert.match(prompt(h.modelCalls[0]),/Aktuel kommunal sag/);
+  assert.match(prompt(h.modelCalls[1]),/Genoffentliggjort arkivsag/);
+  assert.match(prompt(h.modelCalls[1]),/2025-08-15 12:00/,'Original date accompanies the model input');
+  assert.equal(h.rows[1][13],4);
+  assert.equal(h.rows[2][13],4,'Late publications remain repairable after current cases');
+});
+
+test('FirstAgenda ingestion generates links matching the public point URL route', t => {
+  const h = harness(t);
+  h.meetings = [meeting()]; h.agendas.set('council',[item()]);
+  h.run('dailyIngest');
+  assert.equal(h.rows[1][6], `${FA}/vis?id=council&punktid=cycle`);
+});
+
+test('newsletter repairs old point links without changing source dates, analysis or email links', t => {
+  const old = sourceRow(item());
+  const mail = sourceRow(item('email')); mail[4]='fixture@example.invalid'; mail[5]='message-id'; mail[6]='https://sf.dk/source';
+  // Out-of-period fixtures isolate the link migration from model generation.
+  old[0]=old[15]=mail[0]=mail[15]='2025-01-01 12:00';
+  const h = harness(t,[old,mail,old]);
+  h.run('testGenerateNewsletterWithoutEmail');
+  const expected = old.slice(); expected[6]=`${FA}/vis?id=council&punktid=cycle`;
+  assert.deepEqual(h.rows[1],expected);
+  assert.deepEqual(h.rows[2],mail);
+  assert.deepEqual(h.rows[3],expected);
+  assert.ok(h.writes.every(w=>w.column===7 && w.locked));
+  assert.equal(h.modelCalls.length,0); assert.equal(h.mails.length,0);
+});
