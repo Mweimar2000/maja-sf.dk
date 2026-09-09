@@ -35,7 +35,8 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.9-validation";
+const ROBOT_VERSION = "8.2.0-validation";
+const SOURCE_REPLACEMENT_HEADER = "Erstattet af kilde-ID";
 // Inline-PDF: 30 MiB dekodet pr. fil og samlet (~40 MiB base64).
 // Hele JSON-requesten må fylde 45 MiB UTF-8, inkl. instruktioner/tekst/skema.
 // Det holder os under Apps Scripts 50 MB POST-grænse. ZIP/mail har egne grænser.
@@ -348,6 +349,7 @@ function reanalyzeAllRowsLocked_() {
   const ss      = SpreadsheetApp.openById(mustGet_(props, CFG.P_SHEET_ID));
   const sheet   = ss.getSheetByName(props.getProperty(CFG.P_SHEET_NAME) || "Inbox");
   const all     = sheet.getDataRange().getValues();
+  const excluded = sourceRowExclusions_(all).all;
 
   if (all.length < 2) {
     console.log("ℹ️ Ingen data at re-analysere");
@@ -370,6 +372,7 @@ function reanalyzeAllRowsLocked_() {
   let consecutiveFails = 0;
 
   for (let i = startFrom; i < all.length; i++) {
+    if (excluded.has(i - 1)) continue;
     // Start ikke en række der ikke kan nå at blive færdig inden 6-min-grænsen
     if (!timeFor_(WORST_FETCH_MS + 10 * 1000)) {
       console.log(`\n⏱️ Tidsbudget opbrugt — gemmer progress ved række ${i}`);
@@ -441,7 +444,9 @@ function ingestFirstAgendaLocked_() {
   ensureSourceColumns_(sheet);
   repairFirstAgendaSourceLinks_(sheet);
   const cookies = authenticateFirstAgenda_();
-  const committees = fetchCommitteeList_(cookies);
+  const catalog = {};
+  const committees = fetchCommitteeList_(cookies, catalog);
+  restoreReturnedSources_(sheet, catalog);
   const now = new Date();
   const cutoff = now.getTime() - 90 * 86400000;
   const recent = now.getTime() - CFG.FA_DAYS_BACK * 86400000;
@@ -460,11 +465,13 @@ function ingestFirstAgendaLocked_() {
   const nextIndex = meetings.findIndex(x => String(x.meeting.Id) === cursor);
   const ordered = nextIndex > 0 ? meetings.slice(nextIndex).concat(meetings.slice(0,nextIndex)) : meetings;
   let updated = 0;
+  const freshAgendas = [];
   for (let i = 0; i < ordered.length; i++) {
     const {committee, meeting, date} = ordered[i];
     props.setProperty("FA_SCAN_NEXT_ID", String(meeting.Id));
     if (!timeFor_(WORST_FETCH_MS + 30000)) break;
-    const items = fetchMeetingAgenda_(cookies, meeting.Id);
+    const receipt = {};
+    const items = fetchMeetingAgenda_(cookies, meeting.Id, receipt);
     for (const item of items) {
       if (!item.IsOpen) continue;
       const id = `FA:${meeting.Id}:${item.Id}`;
@@ -486,15 +493,18 @@ function ingestFirstAgendaLocked_() {
           firstAgendaSourceUrl_(id), content.slice(0, 45000), names,
           "", "", "", "", "", "", (old ? now : (parseDate_(meeting.ReleasedDate) || date)).toISOString(), fingerprint];
         sheet.getRange(rowIndex, 1, 1, 17).setValues([row.map(sheetText_)]);
-        existing.set(id, {row, index:rowIndex}); updated++;
+        existing.set(id, {row: row.concat(old ? old.row.slice(17) : []), index:rowIndex}); updated++;
       } else if (!old.row[16]) {
         // Første gennemløb etablerer en baseline uden at genudgive hele historikken.
         sheet.getRange(rowIndex, 17).setValue(fingerprint);
       }
     }
+    if (receipt.ok) freshAgendas.push({committee, meeting, receipt});
     if (i === ordered.length - 1) props.deleteProperty("FA_SCAN_NEXT_ID");
     else props.setProperty("FA_SCAN_NEXT_ID", String(ordered[i+1].meeting.Id));
   }
+  const retired = retireReplacedSources_(sheet, catalog, freshAgendas);
+  if (retired) console.log(`🗂️ ${retired} kilder erstattet af ny kilde med samme type; historik bevaret (ingen analysereparation)`);
   console.log(`📡 ${ROBOT_VERSION}: ${updated} nye/ændrede kildepunkter gemt; analyse følger separat`);
 }
 
@@ -525,11 +535,196 @@ function repairFirstAgendaSourceLinks_(sheet) {
 }
 
 function ensureSourceColumns_(sheet) {
-  const expected = ["Kilde opdateret", "Kildefingeraftryk"];
-  if (sheet.getMaxColumns() < 17) sheet.insertColumnsAfter(sheet.getMaxColumns(), 17 - sheet.getMaxColumns());
-  const headers = sheet.getRange(1, 16, 1, 2).getValues()[0];
-  if (headers.some((h,i) => h && h !== expected[i])) throw new Error("Kolonne P-Q bruges allerede — afklar arkets layout");
-  sheet.getRange(1, 16, 1, 2).setValues([expected]);
+  const expected = ["Kilde opdateret", "Kildefingeraftryk", SOURCE_REPLACEMENT_HEADER];
+  const columns = sheet.getMaxColumns(), present = Math.max(0, Math.min(3, columns - 15));
+  const headers = present ? sheet.getRange(1, 16, 1, present).getValues()[0] : [];
+  if (headers.some((h,i) => h && h !== expected[i])) throw new Error("Kolonne P-R bruges allerede — afklar arkets layout");
+  if (columns >= 18 && !headers[2] && sheet.getLastRow() > 1
+      && sheet.getRange(2, 18, sheet.getLastRow() - 1, 1).getValues().some(r => r[0] !== "" && r[0] != null)) {
+    throw new Error("Kolonne R har data uden metadataoverskrift — afklar arkets layout");
+  }
+  if (columns < 18) sheet.insertColumnsAfter(columns, 18 - columns);
+  sheet.getRange(1, 16, 1, 3).setValues([expected]);
+}
+
+/** Streng attest til erstatning; almindelig indsamling beholder sin API-kontrakt. */
+function firstAgendaCatalogProof_(data) {
+  const fail = reason => ({complete:false, reason, committees:[]});
+  const object = x => x && typeof x === "object" && !Array.isArray(x);
+  if (!object(data) || Object.keys(data).length !== 1 || !object(data.Udvalg)) return fail("Katalogets form er ufuldstændig");
+  const groups = ["Byrådet og politiske udvalg", "Byrådet og politiske udvalg - Historisk", "Budget"];
+  if (groups.some(name => !Array.isArray(data.Udvalg[name]) || !data.Udvalg[name].length)) return fail("Kataloggruppe mangler");
+  const committees = [], committeeIds = new Set(), meetingIds = new Set();
+  for (const entries of Object.values(data.Udvalg)) {
+    if (!Array.isArray(entries)) return fail("Ugyldig udvalgsliste");
+    for (const entry of entries) {
+      if (!object(entry) || !firstAgendaGuid_(entry.Id) || committeeIds.has(entry.Id.toLowerCase())
+          || typeof entry.Navn !== "string" || !entry.Navn.trim() || !Array.isArray(entry.Moeder)) return fail("Ufuldstændigt eller gentaget udvalg");
+      committeeIds.add(entry.Id.toLowerCase());
+      for (const meeting of entry.Moeder) {
+        if (!object(meeting) || !firstAgendaGuid_(meeting.Id) || meetingIds.has(meeting.Id.toLowerCase())
+            || typeof meeting.Dato !== "string" || !parseDate_(meeting.Dato)
+            || typeof meeting.Afsluttet !== "boolean") return fail("Ufuldstændigt eller gentaget møde");
+        meetingIds.add(meeting.Id.toLowerCase());
+      }
+      committees.push({id:entry.Id, name:entry.Navn, meetings:entry.Moeder});
+    }
+  }
+  return {complete:true, committees};
+}
+
+function firstAgendaGuid_(id) {
+  return typeof id === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
+}
+
+function firstAgendaStrictId_(id) {
+  const parts = String(id || "").split(":");
+  return parts.length === 3 && parts[0] === "FA" && firstAgendaGuid_(parts[1]) && firstAgendaGuid_(parts[2])
+    ? ["FA", parts[1].toLowerCase(), parts[2].toLowerCase()] : null;
+}
+
+/** En åben post skal have faktisk sagsindhold og strukturerede bilagsmetadata. */
+function firstAgendaOpenPointComplete_(item) {
+  if (item.IsOpen === false) return true;
+  if (typeof (item.Caption || item.Navn) !== "string" || !(item.Caption || item.Navn).trim()
+      || !/^\d+$/.test(String(item.Number)) || !Array.isArray(item.Felter) || !Array.isArray(item.Bilag)) return false;
+  if (item.Number != null && item.Punktnummer != null && String(item.Number) !== String(item.Punktnummer)) return false;
+  if (item.CaseNumber && item.SagsNummer && String(item.CaseNumber).trim() !== String(item.SagsNummer).trim()) return false;
+  if (item.Caption && item.Navn && String(item.Caption).trim() !== String(item.Navn).trim()) return false;
+  if (!item.Felter.every(field => field && typeof field === "object" && !Array.isArray(field))) return false;
+  if (!item.Felter.some(field => [field.Html, field.Tekst, field.Link].some(value => typeof value === "string" && value.trim()) || firstAgendaGuid_(field.DocumentId))) return false;
+  return item.Bilag.every(b => b && firstAgendaGuid_(b.Id) && typeof b.Navn === "string" && b.Navn.trim()
+    && [true, false, "true", "false"].includes(b.HarPdfVersion));
+}
+
+/** Samme identitet som agenda→referat; ingen titel-, dato- eller alderheuristik. */
+function sourcePointKey_(row) {
+  if (row[4] !== "FirstAgenda API" || !/^FA:[^:]+:[^:]+$/.test(String(row[5]))) return "";
+  const date = parseDate_(row[0]), text = String(row[7] || "");
+  const committee = String(row[2] || "").trim(), title = String(row[3] || "").trim();
+  const point = text.match(/^PUNKT\s+(\d+):/);
+  const caseNumber = text.match(/(?:^|\n)Sagsnr:[ \t]*([^\r\n]+)/);
+  if (!date || !committee || !title || !point || !caseNumber || !caseNumber[1].trim()) return "";
+  return JSON.stringify([date.getTime(), committee, title, point[1], caseNumber[1].trim()]);
+}
+
+/** En henvisning er kun aktiv med ejet header og en ubrudt, entydig kæde. */
+function replacementSourceIndexes_(rows, enabled) {
+  const result = new Set(), byId = new Map();
+  if (!enabled) return result;
+  rows.forEach((row, index) => {
+    const parts = firstAgendaStrictId_(row[5]), id = parts ? parts.join(":") : String(row[5]);
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id).push(index);
+  });
+  rows.forEach((row, index) => {
+    if (!row[17] || !["Dagsorden", "Referat"].includes(row[1]) || !firstAgendaStrictId_(row[5])) return;
+    const key = sourcePointKey_(row), visited = new Set([firstAgendaStrictId_(row[5]).join(":")]);
+    if (!key) return;
+    let current = row;
+    for (let step = 0; step < rows.length; step++) {
+      const ids = firstAgendaStrictId_(current[17]), targetId = ids ? ids.join(":") : "", currentIds = firstAgendaStrictId_(current[5]);
+      const indexes = byId.get(targetId);
+      if (!ids || !currentIds || ids[1] === currentIds[1] || visited.has(targetId) || !indexes || indexes.length !== 1) return;
+      const target = rows[indexes[0]];
+      if (target[1] !== row[1] || sourcePointKey_(target) !== key) return;
+      visited.add(targetId);
+      if (!target[17]) { result.add(index); return; }
+      current = target;
+    }
+  });
+  return result;
+}
+
+function sourceRowExclusions_(all) {
+  const rows = all.slice(1);
+  const replacements = replacementSourceIndexes_(rows, all[0] && all[0][17] === SOURCE_REPLACEMENT_HEADER);
+  // Pensionerede referater må ikke gøre den aktuelle referatidentitet tvetydig.
+  // Bevar originale rækkeindekser, når historik først fjernes fra kandidaterne.
+  const active = rows.map((row, index) => ({row, index})).filter(entry => !replacements.has(entry.index));
+  const minutes = new Set([...supersededAgendaIndexes_(active.map(entry => entry.row))]
+    .map(index => active[index].index));
+  return {minutes, replacements, all:new Set([...minutes, ...replacements])};
+}
+
+function restoreReturnedSources_(sheet, catalog) {
+  if (!catalog.complete) return;
+  const all = sheet.getDataRange().getValues();
+  if (!all[0] || all[0][17] !== SOURCE_REPLACEMENT_HEADER) return;
+  const present = new Set(catalog.committees.flatMap(c => c.meetings.map(m => m.Id.toLowerCase())));
+  all.slice(1).forEach((row, index) => {
+    const ids = firstAgendaStrictId_(row[5]);
+    if (row[4] === "FirstAgenda API" && row[17] && ids && present.has(ids[1])) {
+      sheet.getRange(index + 2, 18).setValue("");
+      console.log(`↩️ Række ${index + 2} genaktiveret; mødet findes igen: ${firstAgendaSourceUrl_(row[5])}`);
+    }
+  });
+}
+
+/** Kald først efter vellykket indsamling. Ingen gamle kilde-/analyseceller skrives. */
+function retireReplacedSources_(sheet, catalog, freshAgendas) {
+  if (!catalog.complete || !freshAgendas.length) return 0;
+  const all = sheet.getDataRange().getValues(), rows = all.slice(1);
+  if (!all[0] || all[0][17] !== SOURCE_REPLACEMENT_HEADER) return 0;
+  const present = new Set(catalog.committees.flatMap(c => c.meetings.map(m => m.Id.toLowerCase())));
+  const already = replacementSourceIndexes_(rows, true), targets = new Map();
+  for (const fresh of freshAgendas) {
+    const {committee, meeting, receipt} = fresh;
+    if (!receipt.ok || receipt.meetingId !== meeting.Id) continue;
+    const named = catalog.committees.filter(c => c.name.trim() === committee.name.trim());
+    if (named.length !== 1 || named[0].id !== committee.id) continue;
+    const atTime = named[0].meetings.filter(m => parseDate_(m.Dato).getTime() === parseDate_(meeting.Dato).getTime() && m.Afsluttet === meeting.Afsluttet);
+    if (atTime.length !== 1 || atTime[0].Id !== meeting.Id || meeting.IsSupplementaryAgenda) continue;
+    const data = receipt.data;
+    if (!data || data.Id !== meeting.Id || !data.Udvalg || data.Udvalg.Id !== committee.id
+        || String(data.Udvalg.Navn).trim() !== committee.name.trim() || !data.Moede
+        || !parseDate_(data.Moede.Dato) || parseDate_(data.Moede.Dato).getTime() !== parseDate_(meeting.Dato).getTime()
+        || data.Moede.Afsluttet !== meeting.Afsluttet || data.TillaegsDagsorden || data.Moede.IsSupplementaryAgenda) continue;
+    const local = new Map(), type = meeting.Afsluttet ? "Referat" : "Dagsorden";
+    for (const item of data.Dagsordenpunkter) {
+      if (item.IsOpen !== true || !Array.isArray(item.Bilag) || !Array.isArray(item.Felter)) continue;
+      if (item.Number != null && item.Punktnummer != null && String(item.Number) !== String(item.Punktnummer)) continue;
+      if (item.CaseNumber && item.SagsNummer && String(item.CaseNumber).trim() !== String(item.SagsNummer).trim()) continue;
+      const title = item.Caption || item.Navn || "", content = extractContentFromAgendaItem_(item);
+      const id = `FA:${meeting.Id}:${item.Id}`, names = item.Bilag.map(b => b.Navn || b.Caption || "Bilag").join("; ");
+      const row = [Utilities.formatDate(parseDate_(meeting.Dato), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm"), type,
+        committee.name, title, "FirstAgenda API", id, firstAgendaSourceUrl_(id), content.slice(0,45000), names];
+      const key = sourcePointKey_(row);
+      if (!key) continue;
+      const matchKey = type + ":" + key;
+      if (!local.has(matchKey)) local.set(matchKey, []);
+      local.get(matchKey).push({row, fingerprint:sourceFingerprint_([type, committee.name, title, content, item.Bilag, item.Felter])});
+    }
+    for (const [key, matches] of local) {
+      if (!targets.has(key)) targets.set(key, []);
+      targets.get(key).push(...matches);
+    }
+  }
+  let retired = 0;
+  rows.forEach((old, index) => {
+    const ids = firstAgendaStrictId_(old[5]), key = sourcePointKey_(old);
+    if (!ids || !key || present.has(ids[1]) || already.has(index)) return;
+    const matches = targets.get(old[1] + ":" + key);
+    if (!matches || matches.length !== 1) return;
+    const {row:target, fingerprint} = matches[0], targetIds = firstAgendaStrictId_(target[5]);
+    if (!targetIds || ids[1] === targetIds[1]) return;
+    const stored = rows.filter(r => {
+      const parts = firstAgendaStrictId_(r[5]);
+      return parts && parts.join(":") === targetIds.join(":");
+    });
+    if (stored.length !== 1 || stored[0][17] || stored[0][16] !== fingerprint || stored[0][1] !== old[1]
+        || sourcePointKey_(stored[0]) !== key || [6,7,8].some(column => stored[0][column] !== target[column])) return;
+    const oldNames = String(old[8] || "").split(/;\s*/).filter(Boolean), newNames = String(target[8] || "").split(/;\s*/).filter(Boolean);
+    const removed = oldNames.filter(name => !newNames.includes(name)), added = newNames.filter(name => !oldNames.includes(name));
+    const note = `Kontrolgrundlag ${catalog.retrievedAt}\nKatalog: ${CFG.FA_BASE_URL + CFG.FA_API_COMMITTEES}\nKatalog SHA-256: ${catalog.fingerprint}\n`
+      + `Oprindelig kilde: ${firstAgendaSourceUrl_(old[5])}\nErstatning: ${target[6]}\n`
+      + `Bilag: ${oldNames.length} → ${newNames.length}\nKun tidligere: ${removed.join("; ") || "ingen"}\nKun nye: ${added.join("; ") || "ingen"}\n`
+      + `Tidligere R: ${old[17] || "tom"}\nGælder som pensionering, når R peger på erstatningen. A–Q er bevaret.`;
+    sheet.getRange(index + 2, 18).setNote(note).setValue(target[5]);
+    console.log(`🗂️ Række ${index + 2} erstattet: ${firstAgendaSourceUrl_(old[5])} → ${target[6]} (${oldNames.length} → ${newNames.length} bilag; historik bevaret)`);
+    retired++;
+  });
+  return retired;
 }
 
 function sourceFingerprint_(data) {
@@ -655,7 +850,8 @@ function authenticateFirstAgenda_() {
 /**
  * Henter udvalgsliste med møder fra FirstAgenda API
  */
-function fetchCommitteeList_(cookies) {
+function fetchCommitteeList_(cookies, catalog) {
+  if (catalog) catalog.complete = false;
   console.log("📋 Henter udvalgsliste...");
 
   const url = CFG.FA_BASE_URL + CFG.FA_API_COMMITTEES;
@@ -673,6 +869,10 @@ function fetchCommitteeList_(cookies) {
   }
 
   const data = JSON.parse(response.getContentText());
+  if (catalog) {
+    Object.assign(catalog, firstAgendaCatalogProof_(data), {retrievedAt:new Date().toISOString(), fingerprint:sourceFingerprint_(data)});
+    if (!catalog.complete) console.log(`⚠️ Ingen kildepensionering: ${catalog.reason}`);
+  }
   const committees = [];
 
   // data.Udvalg er et objekt med gruppenavn som nøgler
@@ -693,7 +893,8 @@ function fetchCommitteeList_(cookies) {
 /**
  * Henter fuld dagsorden for et specifikt møde
  */
-function fetchMeetingAgenda_(cookies, meetingId) {
+function fetchMeetingAgenda_(cookies, meetingId, receipt) {
+  if (receipt) receipt.ok = false;
   const url = CFG.FA_BASE_URL + CFG.FA_API_AGENDA + meetingId;
 
   try {
@@ -712,6 +913,16 @@ function fetchMeetingAgenda_(cookies, meetingId) {
     }
 
     const data = JSON.parse(response.getContentText());
+    if (receipt && data && !Array.isArray(data) && data.Id === meetingId && Array.isArray(data.Dagsordenpunkter)) {
+      const allowed = ["Id", "Udvalg", "Moede", "TillaegsDagsorden", "Lydfiler", "LiveIntegrationEnabled", "Dagsordenpunkter"];
+      const ids = new Set();
+      const valid = Object.keys(data).every(key => allowed.includes(key)) && data.Dagsordenpunkter.every(item => {
+        if (!item || !firstAgendaGuid_(item.Id) || ids.has(item.Id.toLowerCase()) || item.AgendaUid !== meetingId
+            || typeof item.IsOpen !== "boolean" || !firstAgendaOpenPointComplete_(item)) return false;
+        ids.add(item.Id.toLowerCase()); return true;
+      });
+      if (valid) Object.assign(receipt, {ok:true, meetingId, data});
+    }
     return data.Dagsordenpunkter || [];
   } catch (e) {
     console.log(`   ❌ Fejl ved hentning af dagsorden: ${e.message}`);
@@ -1219,9 +1430,11 @@ function extractTextFromHtml_(html) {
 function analyzeNewRows_(sheet, startRow, numRows) {
   const props = PropertiesService.getScriptProperties();
   const apiKey = mustGet_(props, CFG.P_API_KEY);
-  const values = sheet.getRange(startRow, 1, numRows, 15).getValues();
+  const all = sheet.getDataRange().getValues(), excluded = sourceRowExclusions_(all).all;
+  const values = all.slice(startRow - 1, startRow - 1 + numRows);
   const cache = {};
   for (let i = 0; i < values.length; i++) {
+    if (excluded.has(startRow + i - 2)) continue;
     if (!timeFor_(WORST_FETCH_MS * 2 + 10000)) break;
     const row = values[i];
     if (isAdministrativeSubject_(row[3])) { writeFormaliaRow_(sheet, startRow + i); continue; }
@@ -1242,8 +1455,8 @@ function analyzePendingRows_(sheet, reserveMs) {
   if (sheet.getLastRow() < 2) return 0;
   const props = PropertiesService.getScriptProperties();
   const apiKey = mustGet_(props, CFG.P_API_KEY);
-  const data = sheet.getDataRange().getValues().slice(1);
-  const superseded = supersededAgendaIndexes_(data);
+  const all = sheet.getDataRange().getValues(), data = all.slice(1);
+  const superseded = sourceRowExclusions_(all).all;
   const nowMs = Date.now(), weekStartMs = nowMs - 7 * 86400000;
   const pending = data.map((row, i) => {
     const sourceTime = sourceDateMs_(row), originalDate = parseDate_(row[0]);
@@ -1293,16 +1506,7 @@ function analyzePendingRows_(sheet, reserveMs) {
  * Ingen rækker eller analyser ændres; tvetydige match bliver i den aktive kø.
  */
 function supersededAgendaIndexes_(rows) {
-  const keyFor = row => {
-    if (row[4] !== "FirstAgenda API" || !/^FA:[^:]+:[^:]+$/.test(String(row[5]))) return "";
-    const date = parseDate_(row[0]), text = String(row[7] || "");
-    const committee = String(row[2] || "").trim(), title = String(row[3] || "").trim();
-    const point = text.match(/^PUNKT\s+(\d+):/);
-    const caseNumber = text.match(/(?:^|\n)Sagsnr:[ \t]*([^\r\n]+)/);
-    if (!date || !committee || !title || !point || !caseNumber || !caseNumber[1].trim()) return "";
-    return JSON.stringify([date.getTime(), committee, title,
-      point[1], caseNumber[1].trim()]);
-  };
+  const keyFor = sourcePointKey_;
   const minutes = new Map();
   rows.forEach(row => {
     const key = keyFor(row);
@@ -2596,7 +2800,7 @@ function generateWeeklyDraftLocked_(options) {
   const now     = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const superseded = supersededAgendaIndexes_(all.slice(1));
+  const superseded = sourceRowExclusions_(all).all;
   const weekItems = all.slice(1)
     .map((row, idx) => {
       // Tom score betyder "aldrig analyseret" — IKKE score 1. Det gamle
@@ -3460,17 +3664,23 @@ function debugDiagnoseSheet() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { console.log("ℹ️ Ingen datarækker"); return; }
 
-  const data = sheet.getDataRange().getValues().slice(1);
+  const all = sheet.getDataRange().getValues(), data = all.slice(1);
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const superseded = supersededAgendaIndexes_(data);
-  let erstattet = 0;
+  const exclusions = sourceRowExclusions_(all), superseded = exclusions.all;
+  let erstattet = 0, kildeErstattet = 0;
   let tom = 0, forgiftet = 0, formalia = 0, scoret = 0, denneUge = 0, tomDenneUge = 0;
   const eksempler = [];
 
   for (const [index, row] of data.entries()) {
-    if (superseded.has(index)) { erstattet++; continue; }
+    if (superseded.has(index)) {
+      if (exclusions.replacements.has(index)) {
+        kildeErstattet++;
+        console.log(`  🗂️ Række ${index + 2}: ${firstAgendaSourceUrl_(row[5])} → ${firstAgendaSourceUrl_(row[17])}`);
+      } else erstattet++;
+      continue;
+    }
     const score = String(row[13]).trim();
     const tldr  = String(row[9]).trim();
     const d     = sourceNewsDate_(row);
@@ -3494,6 +3704,7 @@ function debugDiagnoseSheet() {
 
   console.log(`📊 ${ROBOT_VERSION} — DIAGNOSE af ark '${name}' (${data.length} rækker)\n`);
   console.log(`  🗂️ Erstattet af referat:     ${erstattet} (bevaret som historik)`);
+  console.log(`  🗂️ Erstattet af ny kilde-ID: ${kildeErstattet} (bevaret som historik; ikke analysereparation)`);
   console.log(`  ✅ Rigtigt analyseret:      ${scoret}`);
   console.log(`  📁 Ægte formalia:           ${formalia}`);
   console.log(`  ⏳ Aldrig analyseret (tom): ${tom}`);
