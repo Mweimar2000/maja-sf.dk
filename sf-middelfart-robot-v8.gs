@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.6-validation";
+const ROBOT_VERSION = "8.1.7-validation";
 let LAST_SUCCESSFUL_GEMINI_MODEL = null;
 // Kun denne eksekvering: næste planlagte kørsel prøver modellerne igen.
 const ANALYSIS_RATE_LIMITED_MODELS = new Set();
@@ -280,12 +280,16 @@ function setupOnce_createTriggers() {
 /**
  * Kombineret daglig indsamling: Først API, derefter emails
  */
-function dailyIngest() {
+function dailyIngest(e) {
+  return withBaseTriggerLock_(e, "retryDailyIngest", () => dailyIngestLocked_());
+}
+
+function dailyIngestLocked_() {
   console.log("🔄 Starter daglig indsamling...\n");
 
   // Primær kilde: FirstAgenda API (det faktiske indhold)
   try {
-    ingestFromFirstAgendaApi();
+    ingestFirstAgendaLocked_();
   } catch (e) {
     console.log(`❌ FirstAgenda fejl: ${e.message}`);
     console.log("   Fortsætter med email-indsamling...\n");
@@ -293,7 +297,7 @@ function dailyIngest() {
 
   // Supplerende kilde: Gmail (notifikationer)
   try {
-    ingestInboxEmails();
+    ingestInboxEmailsLocked_();
   } catch (e) {
     console.log(`❌ Email-fejl: ${e.message}`);
   }
@@ -530,6 +534,84 @@ function withRobotLock_(work) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) { console.log("⏳ En anden robotkørsel arbejder — prøv igen senere"); return; }
   try { return work(); } finally { lock.releaseLock(); }
+}
+
+/** Kun disse tre basiskørsler må få låse-genforsøg. */
+function baseRetryProperty_(handler) {
+  if (!["retryDailyIngest", "retryDailyRepairAnalyses", "retryWeeklyDraft"].includes(handler)) {
+    throw new Error("Ukendt base-retryhandler: " + handler);
+  }
+  return "BASE_RETRY_" + handler;
+}
+
+/** Kald kun med den valgte handlers triggere, under schedulerlåsen. */
+function deleteBaseRetryTriggers_(triggers) {
+  triggers.forEach(trigger => {
+    try { ScriptApp.deleteTrigger(trigger); }
+    catch (error) { console.log("⚠️ Kunne ikke rydde gammelt base-genforsøg: " + error.message); }
+  });
+}
+
+/**
+ * Brugerlåsen beskytter kun trigger/UID-overgangen og robotlåsens overtagelse.
+ * Den matcher getProjectTriggers()/UserProperties for samme trigger-ejer.
+ * Arbejdet holder fortsat kun den fælles scriptlås, ligesom faktworkeren.
+ */
+function withBaseTriggerLock_(event, retryHandler, work, isRetry) {
+  const key = baseRetryProperty_(retryHandler);
+  const uid = event && event.triggerUid != null ? String(event.triggerUid) : "";
+  // En manuelt startet retryhandler må hverken udføre arbejde eller starte en timer.
+  if (isRetry && !uid) return;
+  const schedulerLock = LockService.getUserLock();
+  const robotLock = LockService.getScriptLock();
+  let acquired = false;
+  schedulerLock.waitLock(10000);
+  try {
+    const props = PropertiesService.getUserProperties();
+    // Et udløst engangskald kan være væk fra triggerlisten. UID er autoriteten.
+    // Invaliderede eller allerede igangsatte retries må heller ikke arbejde igen.
+    if (isRetry && props.getProperty(key) !== uid) return;
+    acquired = robotLock.tryLock(1000);
+    if (!acquired) {
+      console.log("⏳ En anden robotkørsel arbejder — prøv igen senere");
+      if (uid) {
+        const previous = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === retryHandler);
+        // Opret og registrér afløser FØR gamle triggere slettes.
+        const next = ScriptApp.newTrigger(retryHandler).timeBased().after(7 * 60 * 1000).create();
+        try { props.setProperty(key, String(next.getUniqueId())); }
+        catch (error) {
+          deleteBaseRetryTriggers_([next]);
+          throw error;
+        }
+        deleteBaseRetryTriggers_(previous);
+        console.log("↻ " + retryHandler + " planlagt tidligst om 7 minutter");
+      }
+      return;
+    }
+    const previous = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === retryHandler);
+    // Invalider først: et allerede leveret event må ikke genstarte arbejdet,
+    // heller ikke hvis sletning af selve triggeren fejler.
+    if (props.getProperty(key) !== null) props.deleteProperty(key);
+    deleteBaseRetryTriggers_(previous);
+  } catch (error) {
+    if (acquired) robotLock.releaseLock();
+    throw error;
+  } finally {
+    schedulerLock.releaseLock();
+  }
+  try { return work(); } finally { robotLock.releaseLock(); }
+}
+
+function retryDailyIngest(e) {
+  return withBaseTriggerLock_(e, "retryDailyIngest", () => dailyIngestLocked_(), true);
+}
+
+function retryDailyRepairAnalyses(e) {
+  return withBaseTriggerLock_(e, "retryDailyRepairAnalyses", () => dailyRepairAnalysesLocked_(), true);
+}
+
+function retryWeeklyDraft(e) {
+  return withBaseTriggerLock_(e, "retryWeeklyDraft", () => generateWeeklyDraftLocked_(), true);
 }
 
 /**
@@ -1300,8 +1382,8 @@ function loadAnalysisSource_(row, cache, options) {
  * 6-minutters vindue, så den aldrig konkurrerer med indsamlingen.
  * Kan også køres manuelt for at reparere rækker efter et Gemini-udfald.
  */
-function dailyRepairAnalyses() {
-  return withRobotLock_(() => dailyRepairAnalysesLocked_());
+function dailyRepairAnalyses(e) {
+  return withBaseTriggerLock_(e, "retryDailyRepairAnalyses", () => dailyRepairAnalysesLocked_());
 }
 
 function dailyRepairAnalysesLocked_() {
@@ -2037,6 +2119,23 @@ function factCheckResult_(job) {
       claim.sourceIndex = null; claim.sourceUrl = "";
     }
   });
+  // Også ældre, genoptagede jobs får den aktuelle deterministiske statuskontrol.
+  result.claims.forEach(claim => {
+    if (claim.verdict !== "verified") return;
+    const index = Number.isInteger(claim.sourceIndex) ? claim.sourceIndex - 1 : -1;
+    const story = (job.stories || [])[index];
+    const source = (job.sources || [])[index];
+    if (!story) return; // Fx kalenderkilder har ingen tilhørende histories status.
+    const checkedStory = Object.assign({}, story, {
+      snippet: source && typeof source.freshText === "string" ? source.freshText : story.snippet
+    });
+    try { validateDocumentedActions_(claim.claim, [checkedStory]); }
+    catch (error) {
+      claim.verdict = "unverified";
+      claim.evidence = "Kildens beslutningstekst dokumenterer ikke den påståede gennemførte handling. Kontrollér status manuelt.";
+      claim.sourceIndex = null; claim.sourceUrl = "";
+    }
+  });
   result.summary = { verified: 0, unverified: 0, contradicted: 0 };
   result.claims.forEach(claim => result.summary[claim.verdict]++);
   const notes = [];
@@ -2384,7 +2483,7 @@ function debugFactCheckJob() {
 
 
 function generateWeeklyDraft(options) {
-  return withRobotLock_(() => generateWeeklyDraftLocked_(options));
+  return withBaseTriggerLock_(options, "retryWeeklyDraft", () => generateWeeklyDraftLocked_(options));
 }
 
 function generateWeeklyDraftLocked_(options) {
@@ -2583,6 +2682,7 @@ function newsletterSource_(story) {
   delete source.facts;
   source.unverifiedExtract = String(story.facts || "");
   source.evidenceRule = "snippet er kildetekst. unverifiedExtract er et tidligere AI-uddrag, som kan være forkert eller ufuldstændigt. Kildeteksten har forrang; uafklarede oplysninger udelades eller beskrives med forbehold.";
+  source.recordedDecision = decisionEvidence_(story) || "Ingen særskilt beslutningstekst i kilden.";
   source.decisionStage = "Skeln mellem indstilling, organets beslutning og dokumenteret gennemførelse. En planlagt dato dokumenterer ikke, at handlingen er udført. 'Taget til efterretning' betyder ikke i sig selv, at en indstilling er godkendt eller sendt ud.";
   if (story.type === "Dagsorden") {
     source.decisionStage += " Kildetypen er Dagsorden: en indstilling må ikke omskrives til en allerede truffet beslutning eller udført handling uden udtrykkeligt kildebelæg.";
@@ -2593,7 +2693,54 @@ function newsletterSource_(story) {
   return source;
 }
 
+/** Afgrænset kontrol af de statusoverdrivelser, som blev reproduceret i driftsprøverne. */
+function decisionEvidence_(story) {
+  const snippet = String(story.snippet || "");
+  const decision = snippet.match(/(?:^|\n)\s*Beslutning\s*\n([\s\S]*?)(?=\n\s*(?:Præsentation|Forvaltningen indstiller|Sagsbeskrivelse|Økonomi|Høring|Klima & bæredygtighed)\s*(?:\n|$)|$)/i);
+  return decision ? decision[1].trim() : "";
+}
+
+function validateDocumentedActions_(text, stories) {
+  const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9æøå]+/g, " ").trim();
+  // Bevar punktummet i fx "1. behandling" og decimaltal i samme sætning.
+  const sentences = String(text || "").split(/(?<!\d)[.!?]|\n/).map(normalize);
+  const generic = new Set(["behandling", "ændring", "ændringer", "høring", "forslag", "orientering", "vedrørende", "kommune", "kommunen", "middelfart", "kommunale", "beslutning", "godkendelse"]);
+  for (const story of stories || []) {
+    const decision = normalize(decisionEvidence_(story));
+    const proposalOnly = story.type === "Dagsorden" && !decision;
+    const acknowledged = decision === "taget til efterretning";
+    if (!proposalOnly && !acknowledged) continue;
+    const topics = normalize(story.subject).split(" ").filter(word => word.length >= 6 && !generic.has(word)).map(word => {
+      const stem = word.replace(/(?:erne|ene|ets|ens|et|en)$/, "");
+      return stem.length >= 6 ? stem : word;
+    });
+    const actor = normalize(story.committee);
+    if (!topics.length || !actor) continue;
+    const originalSentences = String(story.snippet || "").split(/(?<!\d)[.!?]|\n/).map(normalize);
+    for (const sentence of sentences) {
+      if (!topics.some(topic => sentence.includes(topic))) continue;
+      if (originalSentences.includes(sentence)) continue; // Kilden dokumenterer selv hele dette udsagn.
+      const index = sentence.indexOf(actor);
+      const following = index < 0 ? "" : sentence.slice(index + actor.length);
+      const completed = /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:sendt|fremsendt|vedtaget|godkendt|besluttet|sendte|fremsendte|vedtog|godkendte|besluttede)\b/.test(following);
+      const heldMeeting = proposalOnly && /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:behandlet|behandlede|haft (?:(?:den|første|anden|1|2) ){0,3}behandling)\b/.test(following);
+      // Et forbehold før handlingen hævder ikke, at den er gennemført.
+      const qualified = prefix => /\b(?:hvis|måske|muligvis)\b|\b(?:uklart|uvist|ikke dokumenteret)\b/.test(prefix);
+      const activeQualified = index >= 0 && qualified(sentence.slice(0, index));
+      // Den passive kontrol gælder den reproducerede udsendelse af høringer.
+      // En historisk vedtagelse af fx en udviklingsplan er en anden handling.
+      const hearingAction = /\b(?:er|blev) (?:(?:nu|netop|allerede) )?(?:sendt|fremsendt) i høring\b/.exec(sentence);
+      const hearingSource = normalize(story.subject).includes("høring");
+      const passive = hearingSource && hearingAction && !qualified(sentence.slice(0, hearingAction.index));
+      if (((completed || heldMeeting) && !activeQualified) || passive) {
+        throw new Error("Kladde beskriver en gennemført beslutning eller handling uden belæg i beslutningsteksten: " + story.subject);
+      }
+    }
+  }
+}
+
 function validateDecisionStage_(text, stories) {
+  validateDocumentedActions_(text, stories);
   const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9æøå]+/g, " ").trim();
   const sentences = String(text).split(/[\n.!?]+/).map(normalize);
   const generic = new Set(["endelig", "endeligt", "vedtagelse", "godkendelse", "indstilling", "behandling",
@@ -2688,6 +2835,10 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
 * En indstilling om at sende noget videre eller i høring dokumenterer ikke,
   at det allerede er sendt. En passeret startdato gør ikke planen gennemført.
   'Taget til efterretning' er ikke i sig selv en godkendelse af indstillingen.
+  Brug recordedDecision til at afgrænse status. Ved Dagsorden uden beslutningstekst
+  skriv fx "forslaget står på dagsordenen"; skriv ikke "udvalget har haft første
+  behandling". Ved "Taget til efterretning" og en foreslået høring skriv
+  "forvaltningen foreslår en høring"; skriv ikke "udvalget har sendt i høring".
 * Bevar hele et beløbs afgrænsning: alle omfattede indsatser, periode og om
   det er et forslag, et årligt beløb eller en samlet projektsum. Fordel aldrig
   et samlet beløb mellem indsatser, når kilden ikke selv angiver fordelingen.
@@ -2695,6 +2846,10 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
   kildebelæg for netop SF's handling. Et SF-temamatch er ikke et bevis.
 * Følelser og SF-værdier er tilladt. Konkrete facts er KUN tilladt hvis
   de kommer direkte fra DATA-sektionen.
+  En dramatisk miljø- eller velfærdsbeskrivelse kan også være en faktapåstand.
+  Beskriv ikke en aktuel tilstand som kollaps, iltsvind eller kamp for overlevelse,
+  medmindre selve tilstanden er dokumenteret i kildeteksten. Skriv hellere et
+  ønske eller en værdi, fx "Vi vil passe på vores havmiljø".
 * FAKTABOKSEN må KUN indeholde tal fra DATA. Hvis der er færre end 3
   nøgletal i data, så skriv kun dem der er. Digt ALDRIG tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.

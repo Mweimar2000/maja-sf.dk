@@ -69,6 +69,7 @@ function harness(t, rows = []) {
     meetings: [], agendas: new Map(), threads: [], labelExists: true,
     writes: [], propertyWrites: [], pages: [], fetches: [], modelCalls: [],
     replies: [], documents: [], documentWrites: [], mails: [], logs: [], unexpected: [], lockEvents: [], triggers: [],
+    schedulerOwner: null, userProperties: new Map(),
     owner: null, beforeWrite: null, afterWrite: null, beforeModel: null, beforeFetch: null,
     files: new Map(), folders: new Map(), fileWrites: [], executions: [], pdfs: new Map(),
     terminateExecution: false, beforeMail: null, beforeFileWrite: null,
@@ -256,14 +257,26 @@ function harness(t, rows = []) {
           return unexpected(`Unsupported date format: ${format}`);
         }
       },
-      PropertiesService: { getScriptProperties: () => ({
+      PropertiesService: { getUserProperties: () => ({
+        getProperty: key => h.userProperties.get(key) ?? null,
+        setProperty(key, value) {
+          h.userProperties.set(key, String(value)); h.propertyWrites.push({ key, value: String(value), user: true });
+        },
+        deleteProperty(key) { h.userProperties.delete(key); h.propertyWrites.push({ key, deleted: true, user: true }); }
+      }), getScriptProperties: () => ({
         getProperty: key => h.properties.get(key) ?? null,
         setProperty(key, value) {
           h.properties.set(key, String(value)); h.propertyWrites.push({ key, value: String(value) });
         },
         deleteProperty(key) { h.properties.delete(key); h.propertyWrites.push({ key, deleted: true }); }
       }) },
-      LockService: { getScriptLock: () => {
+      LockService: { getUserLock: () => {
+        const token = Symbol(entry + ':scheduler');
+        return {
+          waitLock(ms) { assert.equal(ms, 10000); assert.equal(h.schedulerOwner, null); h.schedulerOwner = token; },
+          releaseLock() { assert.equal(h.schedulerOwner, token); h.schedulerOwner = null; }
+        };
+      }, getScriptLock: () => {
         const token = Symbol(entry);
         return {
           tryLock() {

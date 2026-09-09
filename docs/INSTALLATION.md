@@ -2,7 +2,7 @@
 
 Denne ændring er ikke automatisk installeret i Apps Script. Et merge på GitHub opdaterer ikke robotten; kun stilguiden hentes automatisk derfra.
 
-Senest installerede kode er `8.1.5-validation`; dens faktatjekkø er i gang. Leverancen her er `8.1.6-validation` og skal sammenlignes med den kørende kode før installation. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
+Den installerede version er fortsat `8.1.6-validation` (kode fra commit `a048c3a`). Leverancen her er `8.1.7-validation` og skal genlæses efter installation. De tre driftstriggere er gemt og kontrolleret til kl. 9–10, 11–12 og lørdag 13–14. Den eksisterende faktatjekkø fortsætter; slutrapporten og en ny kladde med den ændrede kildepolitik er stadig under driftskontrol. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
 
 ## Før installation
 
@@ -29,6 +29,8 @@ De eksisterende properties bruges fortsat: `SPREADSHEET_ID`, `INBOX_SHEET_NAME`,
 
 For emails bevarer A den faktiske modtagelsesdato, mens P registrerer første indlæsning. Kun mails, der var højst syv dage gamle ved indlæsningen, kan bæres til næste kladde efter en weekendgrænse; ældre arkivmails bliver ikke til aktuelle nyheder.
 
+`BASE_RETRY_retryDailyIngest`, `BASE_RETRY_retryDailyRepairAnalyses` og `BASE_RETRY_retryWeeklyDraft` i UserProperties gemmer kun UID for den enkelte trigger-ejers gyldige genforsøg. De tre retryhandlers reagerer kun på det gemte timer-event. Manuel test uden mail skaber ingen baggrundskørsel, når låsen er optaget. Genforsøg gælder låseafslag; et allerede påbegyndt arbejde gentages ikke automatisk efter en exception.
+
 `FA_SCAN_NEXT_ID`, `GMAIL_SCAN_OFFSET` og `ANALYSIS_RETRY_*` styres af robotten. De muliggør genoptagelse og pauser mellem genforsøg. Der gemmes ingen API-nøgler eller PDF-indhold i disse nye properties.
 
 Faktatjekket opretter en intern mappe, `SF Robotdata (privat)`, uden at kopiere kladdemappens deling. Jobfiler og eventuelle kopier af mailbilag opbevares dér; Script Properties `FACTCHECK_DATA_FOLDER_ID` og `PENDING_FACTCHECK_JOB_ID` indeholder kun fil-IDer. API-nøgler og login-cookies gemmes ikke i opgaven.
@@ -48,6 +50,6 @@ En aktiv kø genoptages ved gentagen kladdedannelse, så der ikke oprettes en ek
 
 ## Tilbagerulning
 
-Før ældre kode gendannes, stands kun engangstriggerne med handleren `processPendingFactCheck`, så de ikke kalder en funktion, som mangler i den ældre version. Bevar jobfilerne til fejlsøgning. Gendan derefter den gemte kode fra før installationen, hvis en driftskontrol kræver tilbagerulning. Bevar regnearksbackuppen og P-Q, indtil data er sammenlignet; slet ikke kilder eller analyser for at nulstille robotten. Kør ikke den ældre kode automatisk over opdaterede data, før konsekvenserne er vurderet.
+Før ældre kode gendannes, stands engangstriggerne med handlerne `processPendingFactCheck`, `retryDailyIngest`, `retryDailyRepairAnalyses` og `retryWeeklyDraft`, så de ikke kalder en funktion, som mangler i den ældre version. Bevar jobfilerne til fejlsøgning. Gendan derefter den gemte kode fra før installationen, hvis en driftskontrol kræver tilbagerulning. Bevar regnearksbackuppen og P-Q, indtil data er sammenlignet; slet ikke kilder eller analyser for at nulstille robotten. Kør ikke den ældre kode automatisk over opdaterede data, før konsekvenserne er vurderet.
 
 [Googles dokumentation om tidsstyrede triggere](https://developers.google.com/apps-script/guides/triggers/installable#time-driven_triggers) beskriver det varierende minut inden for den valgte time.
