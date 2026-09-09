@@ -7,7 +7,7 @@ Google Apps Script, der indsamler kommunale dagsordener og referater samt mails,
 - [Tests, bevisgrundlag og begrænsninger](docs/VERIFIKATION.md)
 - [Stilguide](stilguide.md)
 
-Version `8.1.8-validation` skelner mellem manglende analyse og lav relevans. Kildeændringer nulstiller gammel analyse, PDF'er genhentes ved reparation, og et tomt modelsvar kan ikke give grønt faktatjek. Regnearkets nye kolonner P-Q holder styr på kildeændringer.
+Version `8.1.9-validation` skelner mellem manglende analyse og lav relevans. Kildeændringer nulstiller gammel analyse, PDF'er genhentes ved reparation, og et tomt modelsvar kan ikke give grønt faktatjek. Regnearkets nye kolonner P-Q holder styr på kildeændringer.
 
 Indsamling og analyse kører separat. `dailyIngest` gemmer kilder, `dailyRepairAnalyses` analyserer de nyeste ventende sager først, og `generateWeeklyDraft` gemmer kladden med dækningsstatus. `testGenerateNewsletterWithoutEmail` opretter en testkladde uden notifikationsmail, også i de efterfølgende faktatjekkørsler.
 
@@ -21,6 +21,6 @@ Hvis en tidsstyret basiskørsel møder en optaget robotlås, gemmes et genforsø
 
 Kør `npm test` med Node 22 eller nyere. Ingen afhængigheder skal installeres; tests bruger simulerede Google-tjenester og sender ingen emails.
 
-Den 9. september 2026 er `8.1.8-validation` installeret og genlæst identisk med leverancen. 217/217 lokale tests består, og det afsluttende uafhængige review har ingen udestående P1/P2-fund. Den ældre 8.1.5-kø er afsluttet uden mail med alle 42 PDF-opgaver registreret som vurdering eller konkret fejl. Der foreligger endnu ingen rigtig 8.1.8-skrivetekst: alle tre produktionsmodeller ramte HTTP 429 ved prøven kl. 11.19. To kontrollerede, læsende Gemini 3.8-prøver kl. 11.29 og 11.32 gav begge HTTP 503 på grund af overbelastning. Produktionsmodellerne er uændrede; prøverne gav ikke en godkendt rigtig tekst. Se den daterede [driftsstatus og begrænsninger](docs/VERIFIKATION.md#driftsstatus-9-september-2026).
+Den 9. september 2026 er `8.1.9-validation` installeret og genlæst identisk med leverancen. 240/240 lokale tests består, og det uafhængige review af PDF-rettelsen har ingen udestående P1/P2-fund. Alle fem PDF’er i MOTAS-sagen blev accepteret af Googles `countTokens`-API: 16.891.023 PDF-bytes, 22.528.508 bytes i hele anmodningen og HTTP 200. Dette er en teknisk indlæsningsprøve; en ny rigtig nyhedsbrevstekst med statusrettelserne er fortsat udestående efter kvoter og overbelastning. Se [driftsstatus og begrænsninger](docs/VERIFIKATION.md#driftsstatus-9-september-2026).
 
-**Status: 8.1.8 er installeret og flettet på main; GitHub Actions består.** Koden på main og i Apps Script matcher den samme verificerede SHA-256. Se [publiceringen og testresultatet](docs/VERIFIKATION.md#github-status-9-september-2026). Et GitHub-merge installerer ikke i sig selv koden i Apps Script. Den rigtige skriveprøve er fortsat udestående på grund af kvoter og overbelastning.
+**Status: 8.1.9 er installeret i Apps Script.** PDF-grænserne er 30 MiB pr. fil og samlet som dekodet input; hele JSON-anmodningen må højst være 45 MiB UTF-8 inklusive tekst, svarskema og systeminstruktion. Overskridelse stoppes før netværkskald og forsøges ikke hos flere modeller. ZIP- og mailgrænser er uændrede. Et GitHub-merge installerer ikke i sig selv kode i Apps Script. Se [publicering og kontrol](docs/VERIFIKATION.md#github-status-9-september-2026).

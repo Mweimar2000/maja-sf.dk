@@ -35,7 +35,13 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.8-validation";
+const ROBOT_VERSION = "8.1.9-validation";
+// Inline-PDF: 30 MiB dekodet pr. fil og samlet (~40 MiB base64).
+// Hele JSON-requesten må fylde 45 MiB UTF-8, inkl. instruktioner/tekst/skema.
+// Det holder os under Apps Scripts 50 MB POST-grænse. ZIP/mail har egne grænser.
+const PDF_MAX_FILE_BYTES = 30 * 1024 * 1024;
+const PDF_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+const GEMINI_MAX_REQUEST_BYTES = 45 * 1024 * 1024;
 let LAST_SUCCESSFUL_GEMINI_MODEL = null;
 // Kun denne eksekvering: næste planlagte kørsel prøver modellerne igen.
 const ANALYSIS_RATE_LIMITED_MODELS = new Set();
@@ -785,15 +791,19 @@ function collectGroundTruth_(stories, existingCookies) {
   }
   // Hent alle tekster før PDF'er: ét stort bilag må ikke gøre efterfølgende
   // originale beslutninger og behandlingsplaner til cached kilder.
-  let pdfBytes = sources.reduce((n, source) => n + source.pdfBase64List.reduce((m, pdf) => m + pdf.data.length * 0.75, 0), 0);
+  let pdfBytes = sources.reduce((n, source) => n + source.pdfBase64List.reduce((m, pdf) => m + base64DecodedByteLength_(pdf.data), 0), 0);
   pdfs: for (const source of sources) {
     for (const ref of source.pdfReferences || []) {
       if (!timeFor_(WORST_FETCH_MS * 2 + TAIL_RESERVE_MS)) break pdfs;
       try {
         const pdf = fetchPdfFromUrl_(ref.url, cache.cookies);
         if (!pdf.success) throw new Error("PDF kunne ikke genhentes");
-        const size = pdf.pdfBase64.length * 0.75;
-        if (pdfBytes + size > 15 * 1024 * 1024) break pdfs;
+        const size = base64DecodedByteLength_(pdf.pdfBase64);
+        if (pdfBytes + size > PDF_MAX_TOTAL_BYTES) {
+          source.incomplete = true;
+          console.log("   ⚠️ PDF-kilder afventer: samlet input overskrider 30 MiB dekodet");
+          break pdfs;
+        }
         source.pdfBase64List.push({ name: ref.name, data: pdf.pdfBase64 });
         pdfBytes += size;
       } catch (e) {
@@ -1114,10 +1124,16 @@ function fetchSourceUrl_(url, cookies) {
 
 function pdfResponse_(response) {
   const blob = response.getBlob();
+  if (String(blob.getContentType()).split(";")[0].trim().toLowerCase() !== "application/pdf") {
+    throw new Error("PDF afvist: forkert MIME-type (forventede application/pdf)");
+  }
   const bytes = blob.getBytes();
-  if (!String(blob.getContentType()).toLowerCase().includes("application/pdf")
-      || String.fromCharCode.apply(null, bytes.slice(0,5)) !== "%PDF-"
-      || bytes.length > 15 * 1024 * 1024) throw new Error("Ugyldig eller for stor PDF");
+  if (String.fromCharCode.apply(null, bytes.slice(0,5)) !== "%PDF-") {
+    throw new Error("PDF afvist: manglende eller forkert %PDF- signatur");
+  }
+  if (bytes.length > PDF_MAX_FILE_BYTES) {
+    throw new Error("PDF afvist: filen er " + bytes.length + " bytes; grænsen er 30 MiB");
+  }
   return { success: true, content: "", isPdf: true, pdfBase64: Utilities.base64Encode(bytes) };
 }
 
@@ -1347,8 +1363,8 @@ function loadAnalysisSource_(row, cache, options) {
         if (!timeFor_(WORST_FETCH_MS * 2 + 10000)) throw new Error("Ikke tid til PDF og analyse");
         const pdf = fetchPdfFromUrl_(ref.url, cache.cookies);
         if (!pdf.success) throw new Error("FirstAgenda-PDF kunne ikke genhentes");
-        totalBytes += pdf.pdfBase64.length * 0.75;
-        if (totalBytes > 15 * 1024 * 1024) throw new Error("Samlet PDF-budget overskredet");
+        totalBytes += base64DecodedByteLength_(pdf.pdfBase64);
+        if (totalBytes > PDF_MAX_TOTAL_BYTES) throw new Error("Samlet PDF-budget overskredet: over 30 MiB dekodet");
         result.pdfBase64List.push({name:ref.name, data:pdf.pdfBase64});
       }
     }
@@ -1374,8 +1390,8 @@ function loadAnalysisSource_(row, cache, options) {
     }
   }
   if (result.content.length > 120000) throw new Error("Kildeteksten kræver særskilt behandling (for lang)");
-  const bytes = result.pdfBase64List.reduce((n,pdf) => n + pdf.data.length * 0.75, 0);
-  if (bytes > 15 * 1024 * 1024) throw new Error("PDF-bilag overskrider det samlede inputbudget");
+  const bytes = result.pdfBase64List.reduce((n,pdf) => n + base64DecodedByteLength_(pdf.data), 0);
+  if (bytes > PDF_MAX_TOTAL_BYTES) throw new Error("PDF-bilag overskrider det samlede inputbudget: over 30 MiB dekodet");
   return result;
 }
 
@@ -1601,8 +1617,47 @@ function geminiFetch_(apiKey, payload, opts) {
   throw lastErr || new Error(`${label}: alle modeller fejlede`);
 }
 
+/** Standard-base64 fra Utilities.base64Encode; padding er ikke PDF-bytes. */
+function base64DecodedByteLength_(data) {
+  return Math.floor(data.length * 3 / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+}
+
+/** UTF-8-længde uden bytearray/kopi af den store ASCII/base64-del. */
+function utf8ByteLength_(text) {
+  let bytes = text.length;
+  const nonAscii = /[^\x00-\x7f]/gu;
+  let match;
+  while ((match = nonAscii.exec(text)) !== null) {
+    // ASCII er allerede talt. Et surrogatepar fylder 2 UTF-16-enheder og 4 bytes.
+    // En enkelt surrogate kodes som U+FFFD (3 bytes); JSON.stringify escaper den.
+    bytes += match[0].charCodeAt(0) < 0x800 ? 1 : 2;
+  }
+  return bytes;
+}
+
+/** Alle Gemini-indgange deler samme grænser, også direkte/ældre PDF-kald. */
+function validateInlinePdfBudget_(payload) {
+  let totalBytes = 0;
+  for (const content of payload.contents || []) {
+    for (const part of content.parts || []) {
+      const inline = part.inline_data || part.inlineData;
+      if (!inline || String(inline.mime_type || inline.mimeType || "").toLowerCase() !== "application/pdf") continue;
+      const bytes = base64DecodedByteLength_(inline.data);
+      totalBytes += bytes;
+      if (bytes > PDF_MAX_FILE_BYTES || totalBytes > PDF_MAX_TOTAL_BYTES) {
+        const error = new Error(bytes > PDF_MAX_FILE_BYTES
+          ? "PDF-input afvist: én fil overskrider 30 MiB dekodet"
+          : "PDF-input afvist: samlet input overskrider 30 MiB dekodet");
+        error.noFallback = true;
+        throw error;
+      }
+    }
+  }
+}
+
 /** Ét forsøgsforløb mod ÉN model. Kaster hvis den model ikke kan levere. */
 function geminiFetchModel_(apiKey, model, payload, label, maxAttempts, reserveMs, validateText) {
+  validateInlinePdfBudget_(payload);
   const waits = [3000, 6000, 6000];   // bundet backoff, maks ~15 s i alt
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -1619,6 +1674,14 @@ function geminiFetchModel_(apiKey, model, payload, label, maxAttempts, reserveMs
     })),
     muteHttpExceptions: true
   };
+
+  // Mål præcis den serialiserede body, som fetch modtager, efter systemInstruction.
+  const requestBytes = utf8ByteLength_(options.payload);
+  if (requestBytes > GEMINI_MAX_REQUEST_BYTES) {
+    const error = new Error(label + ": JSON-request er " + requestBytes + " UTF-8 bytes; grænsen er 45 MiB");
+    error.noFallback = true;
+    throw error;
+  }
 
   let lastErr = null, rateLimitFailures = 0;
 
@@ -1806,8 +1869,9 @@ function factCheckNewsletter_(apiKey, newsletter, groundTruth, opts) {
     { text: `PDF-bilag til KILDE ${i + 1}: ${pdf.name || "bilag"}` },
     { inline_data: { mime_type: "application/pdf", data: pdf.data } }
   ]));
-  if (sourcePdfs.reduce((n,p) => n + (p.inline_data ? p.inline_data.data.length : 0), 0) > 20 * 1024 * 1024) {
-    return { summary: { verified: 0, unverified: 0, contradicted: 0 }, claims: [], error: "For mange PDF-bilag til ét fakta-tjek" };
+  if (sourcePdfs.reduce((n,p) => n + (p.inline_data ? base64DecodedByteLength_(p.inline_data.data) : 0), 0) > PDF_MAX_TOTAL_BYTES) {
+    return { summary: { verified: 0, unverified: 0, contradicted: 0 }, claims: [],
+      error: "For mange PDF-bilag til ét fakta-tjek: over 30 MiB dekodet", noFallback: true };
   }
   const prompt = `
 Du er en faktachecker for et politisk nyhedsbrev fra SF Middelfart.

@@ -1,8 +1,8 @@
 # Installation og driftskontrol
 
-**Status: 8.1.8 er installeret og flettet på main; GitHub Actions består.** Et merge på GitHub deployer ikke koden til Apps Script; kun stilguiden hentes automatisk fra GitHub. Liveinstallationen af `8.1.8-validation` er bekræftet i den daterede [driftsstatus for 9. september 2026](VERIFIKATION.md#driftsstatus-9-september-2026).
+**Status: 8.1.9 er installeret i Apps Script.** Et merge på GitHub deployer ikke koden til Apps Script; kun stilguiden hentes automatisk fra GitHub. Liveinstallationen er bekræftet i [driftsstatus for 9. september 2026](VERIFIKATION.md#driftsstatus-9-september-2026).
 
-Version `8.1.8-validation` er installeret 9. september 2026 kl. 11.16 og genlæst i sin helhed. SHA-256 efter normalisering af linjeskift: `00227f9452351649d2337a86a4ed212347e6e5b8413255f10a98eeb5e5edd36f`. Den endelige leverance består 217/217 tests og afsluttende uafhængigt review uden udestående P1/P2-fund. De tre driftstriggere er allerede gemt og kontrolleret til kl. 9–10, 11–12 og lørdag 13–14. Den ældre 8.1.5-kø er afsluttet uden mail; alle 42 bilagsopgaver er registreret, og 14/14 afslutningskontroller består. Den rigtige 8.1.7-kladde viste to statusfejl, som er rettet i 8.1.8, men en ny rigtig 8.1.8-tekst er endnu ikke verificeret: alle tre konfigurerede modeller gav HTTP 429 ved skriveprøven kl. 11.19 under den observerede gratisgrænse på 20 kald pr. døgn pr. model. To kontrollerede, læsende Gemini 3.8-prøver kl. 11.29 og 11.32 gav begge HTTP 503 på grund af overbelastning. De gav ingen godkendt rigtig tekst, og produktionsmodellerne er uændrede. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling og opsætning ikke gentages uden grund.
+Version `8.1.9-validation` er installeret 9. september 2026 og genlæst i sin helhed kl. 12.23. SHA-256 efter normalisering af linjeskift: `47f6ca1dd51352d2ce950edad398514863f156ae6d46e9e5fbb36c178a2455d6`. 240/240 tests består. Den konkrete MOTAS-pakke med fem PDF’er er accepteret af Googles tokenoptælling; det beviser indlæsning, ikke analyse- eller skrivekvalitet. En ny rigtig nyhedsbrevstekst med statusrettelserne er fortsat udestående efter HTTP 429/503. Produktionsmodellerne og de tre allerede kontrollerede driftstriggere er uændrede. Se [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så gennemført opsætning ikke gentages.
 
 Trinene nedenfor er en generel vejledning til førstegangsinstallation og senere opdateringer. De skal ikke gentages samlet for den allerede installerede version; brug den daterede driftsstatus til at se, hvad der allerede er gennemført.
 
@@ -15,7 +15,7 @@ Trinene nedenfor er en generel vejledning til førstegangsinstallation og senere
 ## Indlæs og kontrollér
 
 1. Indlæs den opdaterede `sf-middelfart-robot-v8.gs` i den eksisterende kodefil. Undgå at oprette endnu en fil med de samme globale funktioner og konstanter. Bevar projektets manifest og Script Properties.
-2. Kontrollér `ROBOT_VERSION = "8.1.8-validation"`.
+2. Kontrollér `ROBOT_VERSION = "8.1.9-validation"`.
 3. Kør `debugTestGemini()`. Fejl på alle modeller skal løses før næste trin.
 4. Kør `debugDiagnoseSheet()` og notér antal sager uden gyldig analyse.
 5. Kør `testManualRun()` for indsamling. Den gemmer kilder; efteranalysen har sit eget tidsbudget.
@@ -24,6 +24,8 @@ Trinene nedenfor er en generel vejledning til førstegangsinstallation og senere
 8. Ved førstegangsinstallation eller nødvendig opdatering af triggeropsætningen: kør efter driftskontrollen `setupOnce_createTriggers()` én gang for at opdatere de tre robottriggere, også hvis deres navne allerede findes. **I den aktuelle installation blev opsætningen allerede gennemført 9. september 2026 kl. 09.06, og triggere er kontrolleret. Kør ikke opsætningen igen nu.** Indsamling ligger kl. 09-10, analyse kl. 11-12 og lørdagskladden kl. 13-14 i projektets tidszone. Afstanden tager højde for Googles valg af minut inden for timen og kørslens varighed. Den tidligere analyse kl. 14 lå efter kladden. Funktionen erstatter kun `dailyIngest`, `dailyRepairAnalyses` og `generateWeeklyDraft`; øvrige projekttriggere bevares, herunder en eventuel igangværende `processPendingFactCheck`-fortsættelse.
 
 ## Indstillinger
+
+PDF-input må højst fylde 30 MiB pr. fil og samlet efter dekodning. Den færdige JSON-anmodning må højst fylde 45 MiB UTF-8, inklusive base64, tekst, svarskema og systeminstruktion. Robotten giver særskilte fejl for MIME-type, PDF-signatur og størrelse; en for stor anmodning sendes ikke og genforsøges ikke på en anden model. ZIP- og mailbilag har fortsat deres egne, uændrede grænser.
 
 De eksisterende properties bruges fortsat: `SPREADSHEET_ID`, `INBOX_SHEET_NAME`, `INBOX_LABEL`, `GEMINI_API_KEY` og `DRAFT_FOLDER_ID`.
 
@@ -49,7 +51,7 @@ En aktiv kø genoptages ved gentagen kladdedannelse, så der ikke oprettes en ek
 - Faktatjekket genoptager samme opgave gennem flere kørsler, behandler alle registrerede bilag eller oplyser konkrete fejl og gemmer en separat rapport. Testkøen sender ingen mail.
 - Egne rettelser i en aktiv kladde eller en afbrudt rapport overskrives ikke af en senere worker.
 - Beløb, beslutninger, kalender og påstande om SF's stemmeafgivning efterprøves mod originale kilder.
-- Pronomenhenvisninger og mødetidspunkt kontrolleres i hele den rigtige kladde. En statusnote kan også skyldes en påstand, som modellen ikke tog med i sin liste; fravær af en note beviser ikke fuldstændig dækning. Dette redaktionelle kriterium er endnu ikke dokumenteret opfyldt af en ny 8.1.8-tekst.
+- Pronomenhenvisninger og mødetidspunkt kontrolleres i hele den rigtige kladde. En statusnote kan også skyldes en påstand, som modellen ikke tog med i sin liste; fravær af en note beviser ikke fuldstændig dækning. Dette redaktionelle kriterium er endnu ikke dokumenteret opfyldt af en ny tekst med statusrettelserne i 8.1.8 eller senere.
 
 ## Tilbagerulning
 
