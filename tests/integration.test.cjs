@@ -253,6 +253,7 @@ function harness(t, rows = []) {
           assert.equal(timezone, 'UTC');
           const iso = date.toISOString();
           if (format === 'yyyy-MM-dd HH:mm') return iso.slice(0, 16).replace('T', ' ');
+          if (format === 'yyyy-MM-dd') return iso.slice(0, 10);
           if (format === 'yyyy') return iso.slice(0, 4);
           if (format === 'w') return '37';
           return unexpected(`Unsupported date format: ${format}`);

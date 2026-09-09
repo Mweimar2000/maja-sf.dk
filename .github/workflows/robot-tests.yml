@@ -2,7 +2,7 @@ name: Robot regression tests
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/fix-newsletter-validation]
 permissions:
   contents: read
 jobs:

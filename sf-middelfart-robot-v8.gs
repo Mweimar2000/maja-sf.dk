@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.1.7-validation";
+const ROBOT_VERSION = "8.1.8-validation";
 let LAST_SUCCESSFUL_GEMINI_MODEL = null;
 // Kun denne eksekvering: næste planlagte kørsel prøver modellerne igen.
 const ANALYSIS_RATE_LIMITED_MODELS = new Set();
@@ -152,13 +152,15 @@ const SF_TONE_GUIDE_FALLBACK = `
 # SF Middelfart Nyhedsbrevs-tone — stilguide til nyhedsbrevsrobotten
 Afsender: SF Middelfart (aldrig en enkeltperson). Underskrift: "De bedste hilsner, SF Middelfart"
 Overordnet stemme: Varm, nærværende og fællesskabsorienteret — som et lokalt parti der taler direkte til sine medborgere. Polished og velformuleret, men med en menneskelig kant der viser at der står rigtige mennesker bag ordene. Aldrig bureaukratisk eller distanceret.
+Fakta og kildestatus har forrang for alle stileksempler. En indstilling, en planlagt dato og en faktisk gennemført handling skal holdes adskilt. En fortidig mødedato må ikke omtales som et kommende møde alene, fordi kilden stadig er en dagsorden. Uafklaret status beskrives som uafklaret.
+
 Nøgletræk
 1. Vi-form, aldrig jeg-form
 Altid "vi i SF Middelfart", "os i SF Middelfart", "vi mener", "vi kæmper for". Afsenderen er partiet som kollektiv — ikke én person. Eksempler: "Vi sidder med en klump i maven", "Det gør os faktisk rigtig vrede", "Vi holder øje med..."
 2. Direkte henvendelse uden personlig tiltale
 Ingen "Kære [fornavn]" — nyhedsbrevet distribueres via mail, hjemmeside og delte links, ikke som personlig post. I stedet bruges direkte henvendelse til læseren med "du" og "dig": "Kender du det, når...", "Prøv lige at smage på det her", "Tak fordi du læser med", "Del det gerne med nogen du kender." Læseren skal stadig føle sig som en del af holdet — bare uden formel hilsen.
 3. Emotionelt og kropsligt sprog
-Følelser nævnes direkte — stolthed, vrede, glæde, frustration. Fysiske metaforer bruges: "et åbent sår", "velfærden bløder", "Lillebælt gisper efter vejret". Teksten føler noget, den informerer ikke bare.
+SF's egne følelser nævnes direkte — stolthed, vrede, glæde, frustration. Brug fx "Vi er bekymrede for vores havmiljø" eller "Vi vil skabe tryghed for børn og forældre". En metafor må ikke opfinde en aktuel miljø- eller velfærdstilstand. Tilskriv kun andre mennesker følelser eller reaktioner, når de er dokumenteret; ellers beskriv SF's ønske eller vurdering.
 4. Hverdagsdansk med punch
 Tonen er uformel og talesprogsnær. Korte, punchede sætninger. Fragmenter bruges som stilmiddel: "Hver. En. Eneste. Gang." Udråbstegn og emojis (❤️💚🎉💪💧) bruges i emnelinjer og nøglemomenter — men med måde i brødteksten.
 5. Retoriske spørgsmål og direkte henvendelse
@@ -182,7 +184,7 @@ Jeg-form (brug altid vi/os i SF Middelfart)
 Underskrift med enkeltpersons navn
 Personlig tiltale som "Kære [navn]" — nyhedsbrevet har ikke individuelle modtagere
 Fagsprog, teknisk eller bureaukratisk sprog
-Passiv form ("det blev besluttet" → "vi ser at..." / "kommunen har valgt at...")
+Tung passiv form. Skriv aktivt, når kilden tillader det, men bevar aktør og status: "Forvaltningen foreslår" er et forslag, og "Udvalget tog sagen til efterretning" er ikke det samme som "Kommunen har valgt".
 Neutral, objektiv nyhedsformidling — nyhedsbrevet er partisk med vilje
 Lange opremsninger uden emotionel indramning
 For glatte AI-overgange — lidt ujævnhed og menneskelig energi er bedre end perfekt struktur
@@ -197,7 +199,7 @@ For glatte AI-overgange — lidt ujævnhed og menneskelig energi er bedre end pe
  * hvis noget kalder den gentagne gange).
  */
 function loadToneGuide_() {
-  const CACHE_KEY = "sf_tone_guide_v1";
+  const CACHE_KEY = "sf_tone_guide_" + ROBOT_VERSION;
   const cache = CacheService.getScriptCache();
 
   const cached = cache.get(CACHE_KEY);
@@ -2129,10 +2131,10 @@ function factCheckResult_(job) {
     const checkedStory = Object.assign({}, story, {
       snippet: source && typeof source.freshText === "string" ? source.freshText : story.snippet
     });
-    try { validateDocumentedActions_(claim.claim, [checkedStory]); }
+    try { validateDocumentedActions_(claim.claim, [checkedStory], { sourceBound: true }); }
     catch (error) {
       claim.verdict = "unverified";
-      claim.evidence = "Kildens beslutningstekst dokumenterer ikke den påståede gennemførte handling. Kontrollér status manuelt.";
+      claim.evidence = "Kildens dato og beslutningstekst dokumenterer ikke den påståede status eller handling. Kontrollér status manuelt.";
       claim.sourceIndex = null; claim.sourceUrl = "";
     }
   });
@@ -2140,6 +2142,20 @@ function factCheckResult_(job) {
   result.claims.forEach(claim => result.summary[claim.verdict]++);
   const notes = [];
   if (result.note) notes.push(result.note);
+  // Modellen kan udelade en bisætning fra claims. Denne snævre statusguard
+  // kontrollerer også den gemte heltekst; den garanterer ikke fuld påstandsdækning.
+  if (typeof job.newsletter === "string") {
+    const checkedStories = (job.stories || []).map((story, index) => {
+      const source = (job.sources || [])[index];
+      return Object.assign({}, story, {
+        snippet: source && typeof source.freshText === "string" ? source.freshText : story.snippet
+      });
+    });
+    try { validateDocumentedActions_(job.newsletter, checkedStories); }
+    catch (error) {
+      notes.push("Udokumenteret status i kladdens fulde tekst: statuskontrollen fandt en påstand om mødetidspunkt, beslutning eller handling uden belæg i kildens dato og beslutningstekst. Kontrollér originalkilden manuelt. Denne afgrænsede kontrol dokumenterer ikke fuld dækning af alle påstande.");
+    }
+  }
   if (job.pdfTasks.length) notes.push("PDF-vurderingerne kræver manuel kontrol af citater i originalbilagene.");
   if (pdfConflicts.length) notes.push(`${pdfConflicts.length} mulige modsigelser i PDF-bilag kræver gennemgang.`);
   if (job.failures.length) notes.push(`${job.failures.length} dele af kontrollen kunne ikke gennemføres.`);
@@ -2683,6 +2699,10 @@ function newsletterSource_(story) {
   source.unverifiedExtract = String(story.facts || "");
   source.evidenceRule = "snippet er kildetekst. unverifiedExtract er et tidligere AI-uddrag, som kan være forkert eller ufuldstændigt. Kildeteksten har forrang; uafklarede oplysninger udelades eller beskrives med forbehold.";
   source.recordedDecision = decisionEvidence_(story) || "Ingen særskilt beslutningstekst i kilden.";
+  const meetingDate = parseDate_(story.meetingDate);
+  if (meetingDate && meetingDate.getTime() < Date.now()) {
+    source.meetingTemporalStatus = "Den oprindelige mødedato er passeret. Det dokumenterer hverken afholdelse eller udsættelse. Omtal en dateret dagsorden eller selve forslaget; kald ikke denne behandling kommende uden særskilt belæg.";
+  }
   source.decisionStage = "Skeln mellem indstilling, organets beslutning og dokumenteret gennemførelse. En planlagt dato dokumenterer ikke, at handlingen er udført. 'Taget til efterretning' betyder ikke i sig selv, at en indstilling er godkendt eller sendt ud.";
   if (story.type === "Dagsorden") {
     source.decisionStage += " Kildetypen er Dagsorden: en indstilling må ikke omskrives til en allerede truffet beslutning eller udført handling uden udtrykkeligt kildebelæg.";
@@ -2700,43 +2720,153 @@ function decisionEvidence_(story) {
   return decision ? decision[1].trim() : "";
 }
 
-function validateDocumentedActions_(text, stories) {
+// Punktummer mellem cifre og korte danske ordenstal er ikke sætningsslut.
+// Et punktum efter fx 2026 skal derimod afslutte sætningen, også før en ny sag.
+function actionSentenceEnds_(value) {
+  const text = String(value || ""), ends = [];
+  for (let index = 0; index < text.length; index++) {
+    if (!/[.!?]/.test(text[index])) continue;
+    if (text[index] === "." && /\d/.test(text[index - 1] || "")) {
+      if (/\d/.test(text[index + 1] || "")) continue;
+      const shortOrdinal = /(?:^|[^\d])\d{1,2}$/.test(text.slice(Math.max(0, index - 3), index));
+      if (shortOrdinal && /^[ \t]+[a-zæøå]/.test(text.slice(index + 1))) continue;
+    }
+    ends.push(index + 1);
+  }
+  return ends;
+}
+
+function actionSentenceLines_(value) {
+  const text = String(value || ""), pieces = [];
+  let from = 0;
+  actionSentenceEnds_(text).concat(text.length).forEach(end => {
+    pieces.push(...text.slice(from, end).split(/\r?\n/));
+    from = end;
+  });
+  return pieces;
+}
+
+function validateDocumentedActions_(text, stories, options) {
   const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9æøå]+/g, " ").trim();
   // Bevar punktummet i fx "1. behandling" og decimaltal i samme sætning.
-  const sentences = String(text || "").split(/(?<!\d)[.!?]|\n/).map(normalize);
+  const sentences = actionSentenceLines_(text).map(normalize);
   const generic = new Set(["behandling", "ændring", "ændringer", "høring", "forslag", "orientering", "vedrørende", "kommune", "kommunen", "middelfart", "kommunale", "beslutning", "godkendelse"]);
-  for (const story of stories || []) {
+  // Alle historier indgår i emnebindingen, også dem med dokumenteret beslutning.
+  const contexts = (stories || []).map(story => {
     const decision = normalize(decisionEvidence_(story));
-    const proposalOnly = story.type === "Dagsorden" && !decision;
-    const acknowledged = decision === "taget til efterretning";
-    if (!proposalOnly && !acknowledged) continue;
-    const topics = normalize(story.subject).split(" ").filter(word => word.length >= 6 && !generic.has(word)).map(word => {
-      const stem = word.replace(/(?:erne|ene|ets|ens|et|en)$/, "");
-      return stem.length >= 6 ? stem : word;
+    return {
+      story, meetingDate: parseDate_(story.meetingDate), proposalOnly: story.type === "Dagsorden" && !decision,
+      acknowledged: decision === "taget til efterretning", actor: normalize(story.committee),
+      topics: normalize(story.subject).split(" ").filter(word => word.length >= 6 && !generic.has(word)).map(word => {
+        const stem = word.replace(/(?:erne|ene|ets|ens|et|en)$/, "");
+        return stem.length >= 6 ? stem : word;
+      }),
+      originalSentences: actionSentenceLines_(story.snippet).map(normalize)
+    };
+  });
+  // Et udvalg er en aktør, ikke en entydig sag (fx Skoleudvalgets besøgsrunde).
+  // Filtrér kun de nye kontekstemner; de direkte emnechecks ovenfor/nedenfor bevares.
+  const actorStem = word => word.replace(/(?:ets|ens|et|en|s)$/, "");
+  const actorWords = new Set(contexts.flatMap(context => context.actor.split(" ")).map(actorStem));
+  contexts.forEach(context => {
+    context.contextTopics = context.topics.filter(topic => {
+      const stem = actorStem(topic);
+      return !actorWords.has(stem) && !/(?:udvalg|byråd|forvaltning)$/.test(stem)
+        && !/^(?:endelig|endeligt|vedtagelse|udkast|behandlingsplan)$/.test(topic);
     });
-    const actor = normalize(story.committee);
-    if (!topics.length || !actor) continue;
-    const originalSentences = String(story.snippet || "").split(/(?<!\d)[.!?]|\n/).map(normalize);
-    for (const sentence of sentences) {
-      if (!topics.some(topic => sentence.includes(topic))) continue;
-      if (originalSentences.includes(sentence)) continue; // Kilden dokumenterer selv hele dette udsagn.
-      const index = sentence.indexOf(actor);
-      const following = index < 0 ? "" : sentence.slice(index + actor.length);
-      const completed = /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:sendt|fremsendt|vedtaget|godkendt|besluttet|sendte|fremsendte|vedtog|godkendte|besluttede)\b/.test(following);
-      const heldMeeting = proposalOnly && /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:behandlet|behandlede|haft (?:(?:den|første|anden|1|2) ){0,3}behandling)\b/.test(following);
-      // Et forbehold før handlingen hævder ikke, at den er gennemført.
-      const qualified = prefix => /\b(?:hvis|måske|muligvis)\b|\b(?:uklart|uvist|ikke dokumenteret)\b/.test(prefix);
-      const activeQualified = index >= 0 && qualified(sentence.slice(0, index));
-      // Den passive kontrol gælder den reproducerede udsendelse af høringer.
-      // En historisk vedtagelse af fx en udviklingsplan er en anden handling.
-      const hearingAction = /\b(?:er|blev) (?:(?:nu|netop|allerede) )?(?:sendt|fremsendt) i høring\b/.exec(sentence);
-      const hearingSource = normalize(story.subject).includes("høring");
-      const passive = hearingSource && hearingAction && !qualified(sentence.slice(0, hearingAction.index));
-      if (((completed || heldMeeting) && !activeQualified) || passive) {
-        throw new Error("Kladde beskriver en gennemført beslutning eller handling uden belæg i beslutningsteksten: " + story.subject);
+  });
+  const inspect = (context, sentence) => {
+    const { story, proposalOnly, acknowledged, actor, originalSentences } = context;
+    if (!proposalOnly && !acknowledged) return;
+    if (originalSentences.includes(sentence)) return; // Kilden dokumenterer selv hele dette udsagn.
+    const index = actor ? sentence.indexOf(actor) : -1;
+    const following = index < 0 ? "" : sentence.slice(index + actor.length);
+    const completed = /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:sendt|fremsendt|vedtaget|godkendt|besluttet|sendte|fremsendte|vedtog|godkendte|besluttede)\b/.test(following);
+    const heldMeeting = proposalOnly && /^ (?:(?:har|nu|netop|allerede) ){0,3}(?:behandlet|behandlede|haft (?:(?:den|første|anden|1|2) ){0,3}behandling)\b/.test(following);
+    // Et forbehold før handlingen hævder ikke, at den er gennemført.
+    const qualified = prefix => /\b(?:hvis|måske|muligvis)\b|\b(?:uklart|uvist|ikke dokumenteret)\b/.test(prefix);
+    const activeQualified = index >= 0 && qualified(sentence.slice(0, index));
+    // Afgrænset driftsrepro: en passeret 1. behandling må ikke placeres i fremtiden.
+    // Andre organer eller senere behandlingstrin er ikke samme møde.
+    const stage = normalize(story.subject).match(/^([1-3]) behandling\b/);
+    const future = /\bstår (?:(?:nu|snart|netop) )?over for\b/.exec(sentence);
+    if (proposalOnly && context.meetingDate && context.meetingDate.getTime() < Date.now()
+      && stage && future && !qualified(sentence.slice(0, future.index))) {
+      const stageName = ["", "første", "anden", "tredje"][Number(stage[1])];
+      // Organ og trin skal høre til den kommende behandling, ikke blot nævnes
+      // historisk et andet sted i samme sætning.
+      const futureClause = sentence.slice(future.index).split(/\b(?:og|men|mens|hvorefter|derefter)\b/)[0];
+      const actorBefore = sentence.slice(0, future.index).trim();
+      const sameActor = new RegExp("\\b(?:i|hos|af) " + actor + "\\b").test(futureClause)
+        || actorBefore === actor || actorBefore.endsWith(" " + actor);
+      if (actor && sameActor && new RegExp("\\b(?:" + stage[1] + "|" + stageName + ") behandling(?:en)?\\b").test(futureClause)) {
+        throw new Error("Kladde placerer en behandling efter dens passerede mødedato i fremtiden uden belæg: " + story.subject);
       }
     }
-  }
+    // Den passive kontrol gælder den reproducerede udsendelse af høringer.
+    // En historisk vedtagelse af fx en udviklingsplan er en anden handling.
+    const hearingAction = /\b(?:er|blev) (?:(?:nu|netop|allerede) )?(?:sendt|fremsendt) i høring\b/.exec(sentence);
+    const hearingSource = normalize(story.subject).includes("høring");
+    const passive = hearingSource && hearingAction && !qualified(sentence.slice(0, hearingAction.index));
+    if (((completed || heldMeeting) && !activeQualified) || passive) {
+      throw new Error("Kladde beskriver en gennemført beslutning eller handling uden belæg i beslutningsteksten: " + story.subject);
+    }
+  };
+  // Bevar de eksisterende direkte kontroller med emnenavn i samme sætning/linje.
+  contexts.forEach(context => {
+    if (!context.topics.length || !context.actor) return;
+    sentences.forEach(sentence => {
+      if (context.topics.some(topic => sentence.includes(topic))) inspect(context, sentence);
+    });
+  });
+
+  // Snæver sproglig guard: korte, entydige henvisninger, ikke generel semantisk forståelse.
+  // Linjeskift/blanke afsnit alene afbryder ikke en henvisning; overskrifter gør.
+  const units = [];
+  let body = "", bodyStart = 0, offset = 0;
+  const flush = () => {
+    let from = 0;
+    const stops = actionSentenceEnds_(body);
+    stops.push(body.length);
+    stops.forEach(end => {
+      const sentence = normalize(body.slice(from, end));
+      if (sentence) units.push({ sentence, end: bodyStart + end, heading: false });
+      from = end;
+    });
+    body = "";
+  };
+  const lines = String(text || "").split("\n");
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const isolated = (index === 0 || !lines[index - 1].trim()) && (index === lines.length - 1 || !lines[index + 1].trim());
+    const heading = /^#{1,6}\s+\S|^\*\*[^*]+\*\*$/.test(trimmed)
+      || (isolated && trimmed.length > 0 && trimmed.length <= 120 && !/[.!?]/.test(trimmed));
+    if (heading) {
+      flush();
+      units.push({ sentence: normalize(line), end: offset + line.length, heading: true });
+    } else {
+      if (!body) bodyStart = offset;
+      body += line + "\n";
+    }
+    offset += line.length + 1;
+  });
+  flush();
+  let bound = null, boundAt = -1, boundEnd = 0;
+  const sourceBound = options && options.sourceBound === true && contexts.length === 1;
+  units.forEach((unit, index) => {
+    if (unit.heading || /^(?:i en anden sag|en anden sag|næste sag|nu til|videre til)\b/.test(unit.sentence)) bound = null;
+    const matches = contexts.filter(context => context.contextTopics.some(topic => unit.sentence.includes(topic)));
+    if (matches.length === 1) {
+      bound = matches[0]; boundAt = index; boundEnd = unit.end;
+    } else if (matches.length > 1 || index - boundAt > 3 || unit.end - boundEnd > 800) {
+      bound = null;
+    }
+    // Rapportens kildeindeks er eksplicit, også for korte påstande uden punktum,
+    // som ellers kunne ligne en overskrift i den almindelige kladdetekst.
+    if (sourceBound) { inspect(contexts[0], unit.sentence); return; }
+    if (unit.heading) return;
+    if (bound && /^(?:forslaget|sagen|det)\b/.test(unit.sentence)) inspect(bound, unit.sentence);
+  });
 }
 
 function validateDecisionStage_(text, stories) {
@@ -2798,6 +2928,7 @@ men som et varmt, engageret politisk fællesskab.
 Perioden: ${data.dateRange}
 Ugenummer: ${weekNum}
 År: ${year}
+Dags dato i projektets tidszone: ${Utilities.formatDate(now, tz, "yyyy-MM-dd")}
 
 ════════════════════════════════════════
 TONE & LAYOUT — FAKTUEL KORREKTHED HAR FORRANG
@@ -2823,6 +2954,10 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
 * Brug meetingDate som den oprindelige møde-/modtagelsesdato. En nyere
   indlæsnings- eller offentliggørelsesdato gør ikke en arkivsag til en ny
   beslutning. Omtal ældre møder tydeligt som ældre eller sent offentliggjorte.
+  Sammenhold meetingDate med dags dato og meetingTemporalStatus. En passeret
+  mødedato må ikke omtales som "vi står over for behandlingen", alene fordi
+  kilden stadig er en dagsorden. Det beviser heller ikke, at mødet blev afholdt.
+  Skriv fx "På dagsordenen dateret 8. september beskrives budgetforslaget".
 * Knyt beslutningen til det konkrete organ og læs hele behandlingsplanen.
   Et udvalgs "Godkendt" må ikke omskrives til "endeligt vedtaget", hvis sagen
   efter planen skal videre til fx Økonomiudvalg og Byråd. Skriv i stedet,
@@ -2836,9 +2971,10 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
   at det allerede er sendt. En passeret startdato gør ikke planen gennemført.
   'Taget til efterretning' er ikke i sig selv en godkendelse af indstillingen.
   Brug recordedDecision til at afgrænse status. Ved Dagsorden uden beslutningstekst
-  skriv fx "forslaget står på dagsordenen"; skriv ikke "udvalget har haft første
+  skriv fx "den daterede dagsorden beskriver forslaget"; skriv ikke "udvalget har haft første
   behandling". Ved "Taget til efterretning" og en foreslået høring skriv
-  "forvaltningen foreslår en høring"; skriv ikke "udvalget har sendt i høring".
+  "forvaltningen foreslår en høring"; skriv hverken "udvalget har sendt i høring"
+  eller "Forslaget er nu sendt i høring" i et senere afsnit.
 * Bevar hele et beløbs afgrænsning: alle omfattede indsatser, periode og om
   det er et forslag, et årligt beløb eller en samlet projektsum. Fordel aldrig
   et samlet beløb mellem indsatser, når kilden ikke selv angiver fordelingen.
@@ -2850,6 +2986,10 @@ ABSOLUTTE ANTI-HALLUCINATIONS-REGLER — LÆS DETTE FØRST
   Beskriv ikke en aktuel tilstand som kollaps, iltsvind eller kamp for overlevelse,
   medmindre selve tilstanden er dokumenteret i kildeteksten. Skriv hellere et
   ønske eller en værdi, fx "Vi vil passe på vores havmiljø".
+  Stilguidens eksempler er aldrig belæg for en aktuel tilstand. Brug ikke
+  naturens åndedræt eller borgernes mavefornemmelse som et observeret faktum.
+  Tilskriv ikke børn, forældre eller andre konkrete følelser eller reaktioner,
+  som kilden ikke dokumenterer. Skriv SF's eget håb eller en attribueret begrundelse.
 * FAKTABOKSEN må KUN indeholde tal fra DATA. Hvis der er færre end 3
   nøgletal i data, så skriv kun dem der er. Digt ALDRIG tal op.
 * KALENDEREN må KUN indeholde møder fra KOMMENDE MØDER-blokken nedenfor.
@@ -2958,7 +3098,7 @@ FORBUDTE FORMULERINGER
 - Underskrift med enkeltpersons navn — kun "SF Middelfart"
 - "Venlig hilsen, SF Middelfart" (brug "De bedste hilsner, SF Middelfart")
 - Passiv form ("det blev besluttet", "der er iværksat")
-- Bureaukratiske udtryk ("budgetopfølgning viser", "forvaltningen vurderer")
+- Unødigt bureaukratisk sprog; bevar nødvendig kildehenvisning som "forvaltningen foreslår" eller "forvaltningen vurderer"
 - Overskrifter som "VELKOMMEN", "AFSLUTNING", "UGENS VIGTIGSTE", "SF'S FOKUS"
 - Fortidige datoer i kalender-sektionen
 
