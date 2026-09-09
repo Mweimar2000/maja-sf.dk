@@ -2,7 +2,7 @@
 
 Denne ændring er ikke automatisk installeret i Apps Script. Et merge på GitHub opdaterer ikke robotten; kun stilguiden hentes automatisk derfra.
 
-Senest installerede kode er `8.1.4-validation`; den afsluttende driftsprøve er ikke bestået; leverancen her er `8.1.5-validation`. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
+Senest installerede kode er `8.1.5-validation`; dens faktatjekkø er i gang. Leverancen her er `8.1.6-validation` og skal sammenlignes med den kørende kode før installation. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
 
 ## Før installation
 
@@ -13,11 +13,11 @@ Senest installerede kode er `8.1.4-validation`; den afsluttende driftsprøve er 
 ## Indlæs og kontrollér
 
 1. Indlæs den opdaterede `sf-middelfart-robot-v8.gs` i den eksisterende kodefil. Undgå at oprette endnu en fil med de samme globale funktioner og konstanter. Bevar projektets manifest og Script Properties.
-2. Kontrollér `ROBOT_VERSION = "8.1.5-validation"`.
+2. Kontrollér `ROBOT_VERSION = "8.1.6-validation"`.
 3. Kør `debugTestGemini()`. Fejl på alle modeller skal løses før næste trin.
 4. Kør `debugDiagnoseSheet()` og notér antal sager uden gyldig analyse.
 5. Kør `testManualRun()` for indsamling. Den gemmer kilder; efteranalysen har sit eget tidsbudget.
-6. Kør `dailyRepairAnalyses()`, derefter `debugDiagnoseSheet()`. Gentag, mens antallet falder. Fejlede sager får en genforsøgspause på mindst 15 minutter, så én fejl ikke blokerer resten.
+6. Kør `dailyRepairAnalyses()`, derefter `debugDiagnoseSheet()`. Gentag, mens antallet falder og modelkapacitet er tilgængelig. Ved gentagne kvotefejl springes den pågældende model over resten af eksekveringen; hvis alle modeller er ramt, stopper kørslen uden at ændre de resterende rækker. Næste eksekvering prøver modellerne igen. Fejlede sager får en genforsøgspause på mindst 15 minutter, så én fejl ikke blokerer resten.
 7. Kør `testGenerateNewsletterWithoutEmail()` for en kladde uden notifikationsmail. Funktionen gemmer dokumentet og opretter en faktatjekkø; den samlede kontrol er ikke afsluttet, når denne første kørsel slutter. `processPendingFactCheck()` fortsætter automatisk via en engangstrigger. Brug `debugFactCheckJob()` til status. Kontrollér til sidst dækning, kildecitater, PDF-vurderinger og fejl i den separate faktatjekrapport. Rapporten ligger i den private mappe `SF Robotdata (privat)`; dens link vises i afslutningsloggen og i notifikationer, hvis de er aktiveret. Notifikation er slået fra i hele testkøen.
 8. Efter driftskontrollen: kør `setupOnce_createTriggers()` én gang for at opdatere de tre robottriggere, også hvis deres navne allerede findes. Indsamling ligger kl. 09-10, analyse kl. 11-12 og lørdagskladden kl. 13-14 i projektets tidszone. Afstanden tager højde for Googles valg af minut inden for timen og kørslens varighed. Den tidligere analyse kl. 14 lå efter kladden. Funktionen erstatter kun `dailyIngest`, `dailyRepairAnalyses` og `generateWeeklyDraft`; øvrige projekttriggere bevares, herunder en eventuel igangværende `processPendingFactCheck`-fortsættelse.
 

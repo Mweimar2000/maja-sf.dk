@@ -382,6 +382,7 @@ function harness(t, rows = []) {
         }
         if (/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/[^/]+:generateContent$/.test(url)) {
           h.modelCalls.push({
+            model: url.match(/\/models\/([^/]+):generateContent$/)[1],
             payload: JSON.parse(options.payload), rows: structuredClone(h.rows),
             savedDocuments: h.documents.map(doc => doc.saves.slice()), locked: h.owner !== null,
             job: h.pendingJob(), triggers: h.triggers.map(x => ({ handler: x.handler, delay: x.delay })),
@@ -801,6 +802,199 @@ test('current-period source repair precedes newly republished archive meetings a
   assert.equal(h.rows[2][13],4,'Late publications remain repairable after current cases');
 });
 
+// Exercise model reuse through the public repair entry point, including source
+// reloads and durable row writes. Separate agendas expose unwanted source reads
+// after every model has exhausted its quota. Equal dates make case 1 run first.
+const ANALYSIS_MODELS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+function analysisRepairFixture(t, count = 3, withPdf = false) {
+  const sources = Array.from({ length: count }, (_, i) =>
+    item(`repair-${i + 1}`, `Cykelsti REPAIR_CASE_${i + 1}`));
+  const rows = sources.map((source, i) => {
+    const row = sourceRow(source, { score: '', tldr: '' });
+    row[5] = `FA:repair-meeting-${i + 1}:${source.Id}`;
+    row[6] = `${FA}/Vis/Referat/repair-meeting-${i + 1}`;
+    return row;
+  });
+  const h = harness(t, rows.reverse());
+  sources.forEach((source, i) => {
+    if (withPdf) {
+      const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`;
+      source.Felter[0].DocumentId = id;
+      h.pdfs.set(`${FA}/Pdf/HentEksternPdf?documentId=${id}`, { body: `%PDF-1.4\nrepair case ${i + 1}` });
+    }
+    h.agendas.set(`repair-meeting-${i + 1}`, [source]);
+  });
+  return h;
+}
+
+function repairCase(call) {
+  const match = prompt(call).match(/REPAIR_CASE_(\d+)/);
+  assert.ok(match, 'Every repair request identifies its original source');
+  return Number(match[1]);
+}
+
+function repairModels(h, caseNumber) {
+  return h.modelCalls.filter(call => repairCase(call) === caseNumber).map(call => call.model);
+}
+
+function assertAnalysisSchema(call) {
+  const config = call.payload.generationConfig;
+  assert.equal(config.responseMimeType, 'application/json');
+  assert.equal(config.responseSchema.type, 'OBJECT');
+  assert.deepEqual([...config.responseSchema.required].sort(), Object.keys(GOOD).sort());
+  for (const field of Object.keys(GOOD)) {
+    assert.equal(config.responseSchema.properties[field].type, field === 'score' ? 'INTEGER' : 'STRING');
+  }
+}
+
+for (const withPdf of [false, true]) {
+  test(`analysis model reuse skips a repeatedly rate-limited primary on later ${withPdf ? 'PDF' : 'text'} repair rows`, t => {
+    const h = analysisRepairFixture(t, 3, withPdf);
+    const before = structuredClone(h.rows);
+    const properties = new Map(h.properties);
+    h.beforeModel = call => {
+      assertAnalysisSchema(call);
+      h.replies.push(call.model === ANALYSIS_MODELS[0] ? { httpError: 429 } : GOOD);
+    };
+    h.run('dailyRepairAnalyses');
+    assert.deepEqual(repairModels(h, 1), [
+      ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[1]
+    ]);
+    for (const i of [2, 3]) assert.deepEqual(repairModels(h, i), [ANALYSIS_MODELS[1]],
+      'Reuse the validated fallback instead of paying the primary retry cost for each row');
+    for (let row = 1; row < h.rows.length; row++) {
+      assert.deepEqual(h.rows[row].slice(9, 15), [GOOD.tldr, GOOD.sfAnalysis, GOOD.facts, GOOD.amounts, GOOD.score, GOOD.programMatch]);
+      assert.deepEqual(h.rows[row].slice(0, 9), before[row].slice(0, 9));
+      assert.deepEqual(h.rows[row].slice(15), before[row].slice(15));
+    }
+    assert.equal(pdfCalls(h).length, withPdf ? h.modelCalls.length : 0,
+      'Every retry and reused model retains the original PDF input when present');
+    assert.deepEqual(h.properties, properties, 'Model preference and cooldown must not persist in Script Properties');
+    assert.equal(h.mails.length, 0);
+  });
+}
+
+test('analysis model reuse advances to the next fallback when the preferred fallback also exhausts its quota', t => {
+  const h = analysisRepairFixture(t);
+  h.beforeModel = call => {
+    const rateLimited = call.model === ANALYSIS_MODELS[0]
+      || (repairCase(call) >= 2 && call.model === ANALYSIS_MODELS[1]);
+    h.replies.push(rateLimited ? { httpError: 429 } : GOOD);
+  };
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(repairModels(h, 2), [ANALYSIS_MODELS[1], ANALYSIS_MODELS[1], ANALYSIS_MODELS[2]],
+    'A preferred fallback still has a two-attempt cap and must leave the remaining fallback reachable');
+  assert.deepEqual(repairModels(h, 3), [ANALYSIS_MODELS[2]], 'Both cooled models stay out of later rows');
+  assert.ok(h.rows.slice(1).every(row => row[13] === 4));
+});
+
+for (const primaryErrors of [[503, 503, 503], [429, 503, 503]]) {
+  test(`analysis model reuse keeps a primary with ${primaryErrors.join('/')} eligible and retains its three-attempt cap after reordering`, t => {
+    const h = analysisRepairFixture(t);
+    let firstPrimaryCalls = 0;
+    h.beforeModel = call => {
+      const n = repairCase(call);
+      let reply = GOOD;
+      if (n === 1 && call.model === ANALYSIS_MODELS[0]) {
+        reply = { httpError: primaryErrors[firstPrimaryCalls++] ?? 503 };
+      } else if (n === 2 && call.model !== ANALYSIS_MODELS[2]) {
+        reply = { httpError: 503 };
+      }
+      h.replies.push(reply);
+    };
+    h.run('dailyRepairAnalyses');
+    assert.equal(firstPrimaryCalls, 3);
+    assert.deepEqual(repairModels(h, 2), [
+      ANALYSIS_MODELS[1], ANALYSIS_MODELS[1],
+      ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[2]
+    ], 'Non-quota failures or a single 429 do not cool a model; retry caps belong to the model, not its position');
+    assert.deepEqual(repairModels(h, 3), [ANALYSIS_MODELS[2]]);
+    assert.ok(h.rows.slice(1).every(row => row[13] === 4));
+  });
+}
+
+test('analysis model reuse stops before fetching more sources when all models are cooled and resumes untouched rows next execution', t => {
+  const h = analysisRepairFixture(t);
+  const before = structuredClone(h.rows);
+  h.beforeModel = () => h.replies.push({ httpError: 429 });
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(h.modelCalls.map(call => call.model), [
+    ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[0],
+    ANALYSIS_MODELS[1], ANALYSIS_MODELS[1], ANALYSIS_MODELS[2], ANALYSIS_MODELS[2]
+  ]);
+  assert.deepEqual(h.fetches.filter(url => url.startsWith(`${FA}/api/agenda/dagsorden/`)),
+    [`${FA}/api/agenda/dagsorden/repair-meeting-1`], 'Do not spend source calls after all models are cooled');
+  assert.deepEqual(h.rows, before, 'No invented analyses or scores, including on rows not attempted');
+  const retryKeys = [...h.properties.keys()].filter(key => key.startsWith('ANALYSIS_RETRY_'));
+  assert.deepEqual(retryKeys, ['ANALYSIS_RETRY_FA:repair-meeting-1:repair-1'],
+    'Only the attempted row gets a retry pause; untouched rows remain immediately eligible');
+
+  h.beforeModel = () => h.replies.push(GOOD);
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(h.modelCalls.filter(call => call.execution === 2).map(call => [repairCase(call), call.model]),
+    [[2, ANALYSIS_MODELS[0]], [3, ANALYSIS_MODELS[0]]], 'Execution cooldown resets while the individual row pause survives');
+  assert.equal(h.rows[1][13], 4);
+  assert.equal(h.rows[2][13], 4);
+  assert.deepEqual(h.rows[3], before[3], 'The failed first row remains pending until its own retry time');
+});
+
+test('analysis model reuse resets both preferred model and quota cooldown in a new execution', t => {
+  const h = analysisRepairFixture(t, 2);
+  const properties = new Map(h.properties);
+  h.beforeModel = call => h.replies.push(call.model === ANALYSIS_MODELS[0] ? { httpError: 429 } : GOOD);
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(repairModels(h, 2), [ANALYSIS_MODELS[1]], 'The first execution actually uses the learned preference');
+  const source = item('new-execution', 'Cykelsti REPAIR_CASE_3');
+  h.rows.push(sourceRow(source, { score: '', tldr: '' }));
+  h.agendas.set('council', [source]);
+  h.beforeModel = () => h.replies.push(GOOD);
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(repairModels(h, 3), [ANALYSIS_MODELS[0]], 'Fresh execution must reconsider the configured primary');
+  assert.equal(h.rows.at(-1)[13], 4);
+  assert.deepEqual(h.properties, properties, 'Neither learned state is persisted');
+});
+
+test('analysis model reuse never promotes invalid schema output to a successful model', t => {
+  const h = analysisRepairFixture(t);
+  const before = structuredClone(h.rows);
+  h.beforeModel = call => {
+    assertAnalysisSchema(call);
+    let reply = GOOD;
+    if (repairCase(call) === 1) {
+      reply = call.model === ANALYSIS_MODELS[0] ? { httpError: 429 }
+        : call.model === ANALYSIS_MODELS[1] ? { ...GOOD, facts: [GOOD.facts] } : '{"score":4';
+    }
+    h.replies.push(reply);
+  };
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(repairModels(h, 1), [
+    ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[0], ANALYSIS_MODELS[1], ANALYSIS_MODELS[2]
+  ]);
+  assert.deepEqual(repairModels(h, 2), [ANALYSIS_MODELS[1]],
+    'The last HTTP 200 was invalid JSON and must not become the preferred model');
+  assert.deepEqual(repairModels(h, 3), [ANALYSIS_MODELS[1]]);
+  assert.deepEqual(h.rows[3], before[3], 'Invalid model output must leave the first row untouched and pending');
+  assert.equal(h.rows[1][13], 4);
+  assert.equal(h.rows[2][13], 4);
+});
+
+test('analysis model reuse preserves HTTP 403 noFallback on a preferred model without cooling it', t => {
+  const h = analysisRepairFixture(t);
+  const before = structuredClone(h.rows);
+  h.beforeModel = call => {
+    const reply = call.model === ANALYSIS_MODELS[0] ? { httpError: 429 }
+      : repairCase(call) === 2 ? { httpError: 403 } : GOOD;
+    h.replies.push(reply);
+  };
+  h.run('dailyRepairAnalyses');
+  assert.deepEqual(repairModels(h, 2), [ANALYSIS_MODELS[1]], 'Access denial ends this row after one call, with no fallback');
+  assert.deepEqual(repairModels(h, 3), [ANALYSIS_MODELS[1]], 'Access denial must not become a quota cooldown');
+  assert.deepEqual(h.rows[2], before[2], 'The denied row remains pending instead of acquiring a fake analysis');
+  assert.equal(h.rows[1][13], 4);
+  assert.equal(h.rows[3][13], 4);
+  assert.ok(h.properties.has('ANALYSIS_RETRY_FA:repair-meeting-2:repair-2'));
+});
+
 test('FirstAgenda ingestion generates links matching the public point URL route', t => {
   const h = harness(t);
   h.meetings = [meeting()]; h.agendas.set('council',[item()]);
@@ -868,6 +1062,214 @@ test('source citations survive both initial save and failed fact check without n
   assert.equal(h.mails.length,0);
 });
 
+// Inspect the actual payload sent through UrlFetchApp, not a separately invoked
+// sanitizer. This includes every score group and the surrounding writer rules.
+function writerStories(call) {
+  const text = prompt(call);
+  function block(heading, nextHeading) {
+    const start = text.indexOf('\n' + heading);
+    assert.ok(start >= 0, `Writer includes ${heading}`);
+    const contentStart = text.indexOf('\n[', start + 1) + 1;
+    assert.ok(contentStart > start, `Writer includes a JSON array for ${heading}`);
+    const end = text.indexOf('\n' + nextHeading, contentStart);
+    assert.ok(end > contentStart, `Writer includes the boundary after ${heading}`);
+    return JSON.parse(text.slice(contentStart, end).trim());
+  }
+  return {
+    topStories: block('TOP-SAGER', 'MELLEM-SAGER'),
+    mediumStories: block('MELLEM-SAGER', 'ADMINISTRATIVE SAGER'),
+    adminItems: block('ADMINISTRATIVE SAGER', 'NØGLETAL')
+  };
+}
+
+test('writer source sanitization covers every score group while preserving selection, original dates and stored analyses', t => {
+  const sources = [5, 4, 3, 2, 1].map(score => item(`writer-${score}`, `Kildesag ${score}`,
+    `ORIGINAL_SOURCE_${score}. ${GOOD.facts}`));
+  const selectedRows = sources.map((source, i) => {
+    const score = 5 - i;
+    const row = sourceRow(source, { score, tldr: `OLD_TLDR_${score}` });
+    row[6] = `${FA}/vis?id=council&punktid=${source.Id}`;
+    row[10] = `OLD_POLITICAL_ANALYSIS_${score}`;
+    row[11] = `UNVERIFIED_EXTRACT_${score}: ${GOOD.facts}`;
+    row[12] = `OLD_AMOUNTS_${score}`;
+    row[14] = `OLD_PROGRAM_MATCH_${score}`;
+    return row;
+  });
+  selectedRows[0][0] = '2026-05-11 12:00'; // Recently published, but still an old meeting.
+  const pending = sourceRow(item('writer-pending', 'EXCLUDED_PENDING_CASE'), { score: '', tldr: '' });
+  const old = sourceRow(item('writer-history', 'EXCLUDED_OLD_CASE'), { score: 5 });
+  old[0] = '2026-05-11 12:00'; old[15] = '2026-05-11T12:00:00Z';
+  for (const row of [pending, old]) row[6] = `${FA}/vis?id=council&punktid=${row[5].split(':')[2]}`;
+  const h = harness(t, [...selectedRows, pending, old]);
+  const before = structuredClone(h.rows);
+  h.agendas.set('council', sources);
+  h.replies.push(DRAFT, CHECK);
+  h.run('testGenerateNewsletterWithoutEmail');
+  const call = h.modelCalls[0], groups = writerStories(call);
+  assert.deepEqual(groups.topStories.map(story => story.score), [5, 4]);
+  assert.deepEqual(groups.mediumStories.map(story => story.score), [3]);
+  assert.deepEqual(groups.adminItems.map(story => story.score), [2, 1]);
+  const stories = Object.values(groups).flat();
+  assert.equal(stories.length, 5);
+  for (const story of stories) {
+    const row = selectedRows.find(row => row[5] === story.sourceId);
+    assert.ok(row, 'Only analysed, in-period stories reach the writer');
+    for (const field of ['tldr', 'sfAnalysis', 'amounts', 'programMatch', 'facts']) {
+      assert.equal(Object.hasOwn(story, field), false, `${field} must not remain a parallel source of facts`);
+    }
+    assert.equal(story.unverifiedExtract, row[11]);
+    assert.equal(story.snippet, row[7]);
+    assert.equal(story.type, row[1]);
+    assert.equal(story.committee, row[2]);
+    assert.equal(story.sourceUrl, row[6]);
+    assert.equal(story.meetingDate, row[0], 'Publication must not replace the original meeting date');
+    assert.equal(story.date, new Date(row[15]).toISOString());
+    assert.match(story.evidenceRule, /snippet.*kildetekst/i);
+    assert.match(story.evidenceRule, /unverifiedExtract.*AI.*forkert/i);
+    assert.match(story.evidenceRule, /[Kk]ildeteksten har forrang/);
+    assert.match(story.decisionStage, /indstilling.*beslutning.*gennemførelse/i);
+    assert.match(story.decisionStage, /Taget til efterretning.*ikke.*godkendt eller sendt ud/i);
+    const queued = h.pendingJob().stories.find(source => source.sourceId === story.sourceId);
+    assert.equal(queued.tldr, row[9]);
+    assert.equal(queued.sfAnalysis, row[10]);
+    assert.equal(queued.facts, row[11]);
+    assert.equal(queued.amounts, row[12]);
+    assert.equal(queued.programMatch, row[14], 'Sanitization must copy the story, not mutate the queued source');
+  }
+  assert.doesNotMatch(prompt(call), /OLD_TLDR_|OLD_POLITICAL_ANALYSIS_|OLD_AMOUNTS_|OLD_PROGRAM_MATCH_|EXCLUDED_PENDING_CASE|EXCLUDED_OLD_CASE/);
+  assert.equal(h.pendingJob().phase, 'prepare');
+  assert.equal(h.modelCalls.length, 1, 'Source sanitization does not start synchronous fact checking');
+  h.drain();
+  assert.deepEqual(h.rows, before, 'Writer and workers preserve the original Sheet history');
+  assert.match(h.report().text, /DÆKNING: 6 sager i perioden.*5 analyseret.*1 mangler analyse/);
+  assert.match(h.report().text, /2026-05-11 12:00/);
+  assert.equal(h.mails.length, 0);
+});
+
+test('writer source sanitization preserves both budget purposes and removes the false single-purpose fact box', t => {
+  const scope = 'Der foreslås samlet 18 mio. kr. årligt i 2027-2030 til både dagtilbud og folkeskoler. Fordelingen mellem indsatserne er ikke angivet.';
+  const falseAmount = '18 mio. kr. alene til folkeskoler';
+  const source = item('shared-budget', 'Budgetforslag for børn og unge', scope);
+  const row = sourceRow(source, { score: 5, tldr: falseAmount });
+  row[10] = `SF prioriterer ${falseAmount}.`;
+  row[11] = scope;
+  row[12] = falseAmount;
+  const h = harness(t, [row]); h.agendas.set('council', [source]);
+  h.replies.push(`${scope}\n\nDe bedste hilsner, SF Middelfart`, {
+    claims: [{ claim: scope, verdict: 'verified', evidence: scope, sourceIndex: 1 }]
+  });
+  h.run('testGenerateNewsletterWithoutEmail');
+  const call = h.modelCalls[0], story = writerStories(call).topStories[0];
+  assert.equal(story.snippet, scope);
+  assert.equal(story.unverifiedExtract, scope, 'Both purposes, annual scope, period and proposal status survive intact');
+  assert.ok(!prompt(call).includes(falseAmount), 'Neither a stale summary nor the independent amounts block may reintroduce the narrowed allocation');
+  assert.doesNotMatch(prompt(call), /NØGLETAL FRA DATA \(brug i FAKTABOKSEN\)/);
+  const numberGuidance = prompt(call).slice(prompt(call).indexOf('\nNØGLETAL'));
+  assert.ok(!numberGuidance.includes('18 mio. kr.'), 'No extracted amount is separately promoted into the fact box instructions');
+  assert.match(prompt(call), /alle omfattede indsatser, periode/);
+  assert.match(prompt(call), /Fordel aldrig[\s\S]*kilden ikke selv angiver fordelingen/);
+  h.drain();
+  assert.equal(h.latestJob().textResult.summary.verified, 1);
+  assert.equal(h.rows[1][10], row[10]);
+  assert.equal(h.rows[1][12], falseAmount, 'Sanitization must not rewrite the historical analysis');
+  assert.equal(h.mails.length, 0);
+});
+
+test('writer source sanitization keeps an AI-only attachment amount explicitly unverified instead of supplying it as independent evidence', t => {
+  const source = item('attachment-budget', 'Budgetbilag til orientering', 'Budgetmaterialet findes i bilaget. Taget til efterretning.');
+  const pdfId = '00000000-0000-4000-8000-000000000077';
+  source.Bilag = [{ Id: pdfId, HarPdfVersion: 'true', Navn: 'Budgetbilag' }];
+  const amount = '73 mio. kr.';
+  const row = sourceRow(source);
+  row[11] = `Tidligere AI-uddrag af bilaget: ${amount} til renovering i 2027.`;
+  row[10] = `SF sikrer ${amount} til renovering.`;
+  row[12] = amount;
+  const h = harness(t, [row]); h.agendas.set('council', [source]);
+  h.pdfs.set(`${FA}/vis/pdf/bilag/${pdfId}/?redirectDirectlyToPdf=true`, { body: '%PDF-1.4\nfixture budget attachment' });
+  h.replies.push('Budgetmaterialet er taget til efterretning.\n\nDe bedste hilsner, SF Middelfart', {
+    claims: [{ claim: 'Budgetmaterialet er taget til efterretning.', verdict: 'verified', evidence: 'Taget til efterretning.', sourceIndex: 1 }]
+  }, { reviews: [] });
+  h.run('testGenerateNewsletterWithoutEmail');
+  const call = h.modelCalls[0], story = writerStories(call).topStories[0];
+  assert.equal(story.unverifiedExtract, row[11], 'Missing snippet detail is retained only as an explicitly unreliable AI extract');
+  assert.ok(!story.snippet.includes(amount));
+  assert.ok(!prompt(call).replace(JSON.stringify(story.unverifiedExtract), '').includes(amount),
+    'The amount must appear only inside unverifiedExtract, never a second facts field or a separate fact box');
+  assert.match(prompt(call), /Udelad beløb og andre detaljer, som kun findes i AI-uddraget[\s\S]*underbygges af kildeteksten/);
+  assert.match(prompt(call), /AI-uddrag alene[\s\S]*ikke dokumentation; usikre beløb udelades fra faktaboksen/);
+  assert.equal(pdfCalls(h).length, 0, 'The writer has not read the attachment and must not be given its AI extract as verified evidence');
+  h.drain();
+  assert.equal(pdfCalls(h).length, 1, 'The attachment still reaches the separate fact-check pipeline');
+  assert.match(prompt(pdfCalls(h)[0]), /beløbets fulde afgrænsning, alle omfattede indsatser og perioden/);
+  assert.equal(h.documents.length, 2);
+  assert.equal(h.mails.length, 0);
+});
+
+test('writer source sanitization workflow carries full budget scope and separate subclause status through analysis and fact checking', t => {
+  const scope = 'Der foreslås samlet 18 mio. kr. årligt i 2027-2030 til både dagtilbud og folkeskoler.';
+  const source = item('budget-status', 'Budgetforslag', `${scope}\nIndstilling: Send forslaget i høring fra 1. september 2026.\nBeslutning: Taget til efterretning.`);
+  const h = harness(t, [sourceRow(source, { score: '', tldr: '' })]);
+  h.agendas.set('council', [source]);
+  const unsupportedStatus = 'Forslaget er sendt i høring.';
+  h.replies.push({ ...GOOD, facts: scope, amounts: scope },
+    `${scope} Forslaget, der er sendt i høring, omfatter begge indsatser.\nDe bedste hilsner, SF Middelfart`, {
+      claims: [
+        { claim: scope, verdict: 'verified', evidence: scope, sourceIndex: 1 },
+        { claim: unsupportedStatus, verdict: 'unverified', evidence: 'Indstilling og efterretning dokumenterer ikke udsendelsen.', sourceIndex: null }
+      ]
+    });
+  h.run('dailyRepairAnalyses');
+  const analysisPrompt = prompt(h.modelCalls[0]);
+  assert.match(analysisPrompt, /alle omfattede indsatser.*periode.*forslag.*beslutning.*årligt beløb.*projektsum/);
+  assert.match(analysisPrompt, /Taget til efterretning.*ikke.*godkendelse eller udsendelse/);
+  assert.match(analysisPrompt, /Dette gælder også sfAnalysis og amounts/);
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(writerStories(h.modelCalls[1]).topStories[0].unverifiedExtract, scope);
+  untilPhase(h, 'text');
+  h.worker();
+  const call = h.modelCalls.at(-1), text = prompt(call);
+  assertCheckpoint(call, 'text');
+  assert.match(text, /bisætninger/);
+  assert.match(text, /Del sammensatte udsagn.*beløb.*status og tidspunkt/);
+  assert.match(text, /Taget til efterretning.*ikke.*bevis for udsendelse/);
+  assert.match(text, /fulde afgrænsning og perioden/);
+  assert.equal(h.pendingJob().textResult.claims.length, 2, 'Amount and subordinate status claim survive as separate assessments');
+  assert.deepEqual(h.pendingJob().textResult.summary, { verified: 1, unverified: 1, contradicted: 0 });
+  h.drain();
+  assert.ok(h.report().text.includes(unsupportedStatus));
+  assert.match(h.report().text, /UVERIFICEREDE PÅSTANDE/);
+  assert.equal(h.mails.length, 0);
+});
+
+for (const type of ['Dagsorden', 'Referat']) {
+  test(`writer source sanitization preserves ${type} status and guards recommendations, elapsed dates and later treatment`, t => {
+    const text = 'Indstilling: Send planen i høring fra 1. september 2026.\nBeslutning: Taget til efterretning.\nBehandlingsplan: Klimaudvalget 2. september 2026; Byrådet 28. september 2026.';
+    const source = item('plan-status', 'Spildevandsplan', text), row = sourceRow(source);
+    row[1] = type; row[2] = 'Klimaudvalget';
+    row[11] = 'Tidligere AI: Planen blev sendt i høring den 1. september 2026.';
+    const h = harness(t, [row]); h.agendas.set('council', [source]);
+    h.replies.push('Klimaudvalget har taget orienteringen til efterretning. Sagen går videre til Byrådet.\nDe bedste hilsner, SF Middelfart', {
+      claims: [{ claim: 'Klimaudvalget har taget orienteringen til efterretning.', verdict: 'verified', evidence: 'Taget til efterretning.', sourceIndex: 1 }]
+    });
+    h.run('testGenerateNewsletterWithoutEmail');
+    const call = h.modelCalls[0], story = writerStories(call).topStories[0];
+    assert.equal(story.type, type);
+    assert.equal(story.snippet, text, 'Preserve the recommendation and recorded decision verbatim');
+    assert.equal(story.unverifiedExtract, row[11]);
+    assert.match(story.decisionStage, /planlagt dato.*ikke.*udført/i);
+    assert.match(story.decisionStage, /Taget til efterretning.*ikke.*godkendt eller sendt ud/i);
+    assert.match(story.decisionStage, /videre behandling.*ikke en endelig vedtagelse/i);
+    if (type === 'Dagsorden') {
+      assert.match(story.decisionStage, /Kildetypen er Dagsorden.*indstilling.*ikke.*allerede truffet beslutning/);
+    }
+    assert.match(prompt(call), /indstilling om at sende[\s\S]*ikke,[\s\S]*allerede er sendt/);
+    assert.match(prompt(call), /passeret startdato.*ikke.*gennemført/);
+    h.drain();
+    assert.equal(h.documents.length, 2);
+    assert.equal(h.mails.length, 0);
+  });
+}
+
 test('a finality overclaim from the writing model triggers fallback before any draft is saved', t => {
   const text='Godkendt. Behandlingsplan: Klimaudvalget den 2. september. Byrådet den 28. september.';
   const source=item('cycle','Spildevandsplan',text), r=sourceRow(source); r[2]='Klimaudvalget';
@@ -879,6 +1281,14 @@ test('a finality overclaim from the writing model triggers fallback before any d
   h.run('testGenerateNewsletterWithoutEmail'); h.drain();
   assert.equal(h.documents.length,2);assert.equal(h.modelCalls.length,3);
   assert.match(h.fetches.filter(url=>url.startsWith('https://generativelanguage.googleapis.com'))[1],/gemini-3.6-flash/);
+  for (const call of h.modelCalls.slice(0, 2)) {
+    const story = writerStories(call).topStories[0];
+    assert.equal(Object.hasOwn(story, 'tldr'), false);
+    assert.equal(story.snippet, text);
+    assert.match(story.decisionStage, /videre behandling.*ikke en endelig vedtagelse/i);
+    assert.deepEqual(call.savedDocuments, [], 'The rejected primary and accepted fallback both precede document creation');
+    assert.ok(!prompt(call).includes(bad), 'A stale overclaim must not re-enter the fallback writer prompt');
+  }
   for (const saved of h.documents.flatMap(doc => doc.saves)) { assert.ok(saved.includes(good));assert.ok(!saved.includes(bad)); }
   assert.equal(h.mails.length,0);assert.equal(h.rows[1][9],bad,'Stored history is preserved');
 });
@@ -928,6 +1338,43 @@ function assertCheckpoint(call, phase) {
   assert.ok(call.locked, 'Worker owns the same script lock as generation');
   assert.ok(call.savedDocuments[0]?.length, 'Initial document predates the model request');
 }
+
+test('analysis model reuse leaves explicit fact-check models and one-call worker budgets unchanged', t => {
+  const h = queuedFixture(t, 2);
+  const initialText = h.documents[0].text;
+  h.replies.push({ httpError: 429 }, CHECK, { httpError: 503 }, { reviews: [] }, { reviews: [] });
+  untilPhase(h, 'text');
+  h.worker();
+  assert.equal(h.pendingJob().phase, 'text', 'A failed explicit call waits for a new worker before fallback');
+  assert.equal(h.pendingJob().attempts.text, 1);
+  assert.equal(h.modelCalls.length, 2, 'Only the writing call and one text attempt have run');
+  assert.equal(h.workerTriggers()[0].delay, 60000);
+  h.worker();
+  assert.equal(h.pendingJob().phase, 'pdf');
+  assert.equal(h.pendingJob().preferredModel, ANALYSIS_MODELS[1], 'Successful text fallback is checkpointed for PDF workers');
+  h.worker();
+  assert.equal(h.pendingJob().pdfCursor, 0);
+  assert.equal(h.pendingJob().attempts['pdf:0'], 1);
+  assert.equal(pdfCalls(h).length, 1, 'A failed explicit PDF call must not start an internal retry loop');
+  assert.equal(h.workerTriggers()[0].delay, 60000);
+  h.worker();
+  assert.equal(h.pendingJob().pdfCursor, 1);
+  assert.equal(h.pendingJob().preferredModel, ANALYSIS_MODELS[0]);
+  h.worker();
+  assert.equal(h.pendingJob().pdfCursor, 2);
+  const workerCalls = h.modelCalls.filter(call => call.job);
+  assert.deepEqual(workerCalls.map(call => call.model), [
+    ANALYSIS_MODELS[0], ANALYSIS_MODELS[1], ANALYSIS_MODELS[1], ANALYSIS_MODELS[0], ANALYSIS_MODELS[0]
+  ], 'Worker model selection follows the durable job, independently of fresh per-execution analysis state');
+  assert.equal(new Set(workerCalls.map(call => call.execution)).size, workerCalls.length,
+    'Text and PDF fallback calls each require a separate execution');
+  for (const call of workerCalls) assertCheckpoint(call, call.job.phase);
+  h.drain();
+  assert.equal(h.documents.length, 2);
+  assert.equal(h.documents[0].text, initialText);
+  assert.equal(h.latestJob().pdfReviews.length, 2);
+  assert.equal(h.mails.length, 0);
+});
 
 test('generation returns a durable prepare job before fetching sources or fact checking', t => {
   const h = queuedFixture(t, 2);
