@@ -1,0 +1,683 @@
+{
+  "provenance": {
+    "source": "Previously saved anonymous public FirstAgenda GET responses; no private Sheet export is included.",
+    "catalog": {
+      "url": "https://dagsordener.middelfart.dk/api/agenda/udvalgsliste",
+      "method": "GET",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "serverDate": "Wed, 09 Sep 2026 10:53:49 GMT",
+      "bytes": 362922,
+      "sha256": "3c38e3336b9a5bcbe35ebad552bd36ca36b95ec4d9f6e84c0bae98927a6c6d2f",
+      "finishedAt": "2026-09-09T10:53:50.519918+00:00"
+    },
+    "catalogFixtureNote": "Meeting lists narrowed to the two public target meetings for isolated offline ingestion tests; original complete public response SHA retained.",
+    "redaction": "J-O are synthetic empty pending-analysis cells, preserving the four original pending classifications. P uses synthetic dates, unrelated to private ingestion times. Local paths, Sheet/export hashes, spreadsheet row numbers and response filenames are excluded. Tests separately seed nonempty synthetic valid analyses to verify preservation and invalidation.",
+    "rowFields": "A-I and Q represent public source identifiers, dates, text, attachments and full-source fingerprints. Headers are the standard schema, not private data."
+  },
+  "header": [
+    "Modtaget",
+    "Type",
+    "Udvalg",
+    "Emne",
+    "Fra",
+    "MsgID",
+    "URLs",
+    "Snippet",
+    "Vedhæftninger",
+    "TLDR",
+    "SF Analyse",
+    "Fakta",
+    "Beløb",
+    "Score",
+    "Match",
+    "Kilde opdateret",
+    "Kildefingeraftryk"
+  ],
+  "catalog": {
+    "Udvalg": {
+      "Byrådet og politiske udvalg": [
+        {
+          "Id": "e0eee1e0-f53c-4358-8225-e63cc6fcfdbd",
+          "Navn": "Beskæftigelses- og Arbejdsmarkedsudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "d914f458-83f8-4aa1-b9e4-03018f9d14ab",
+          "Navn": "Byrådet",
+          "Moeder": [
+            {
+              "Id": "5112404c-ad60-4b0a-95bc-5fa84c0e0084",
+              "MeetingBeginUtc": "2026-08-31T17:00:00+02:00",
+              "MeetingEndUtc": "2026-08-31T18:00:00+02:00",
+              "ReleasedDate": "2026-09-04T08:18:10.2178633+02:00",
+              "Dato": "2026-08-31T17:00:00+02:00",
+              "Sted": "Byrådssalen",
+              "Afsluttet": true,
+              "Moededeltagere": null,
+              "Navn": "Dagsorden",
+              "Description": null,
+              "ElasticSearchResults": null,
+              "SourceId": null,
+              "IsSupplementaryAgenda": false
+            }
+          ]
+        },
+        {
+          "Id": "067146da-6d3d-43ab-8f24-31df3f3f9129",
+          "Navn": "Børn- Kultur og Fritidsudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "ebdbba31-cfe3-42d6-b102-80bc6e7be801",
+          "Navn": "Energirenoveringsudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "47f612d8-8499-48df-96ca-66e856979be9",
+          "Navn": "Klima- Natur og Genbrugsudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "6b88470f-c6d8-488b-b6f3-2b1cf4058fc6",
+          "Navn": "Skoleudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "cc58a559-59c7-4022-b21d-d52de1ff55b2",
+          "Navn": "Social- og Sundhedsudvalget",
+          "Moeder": []
+        },
+        {
+          "Id": "4cc308a8-45aa-4b0a-99e9-5082d9720de8",
+          "Navn": "Teknisk Udvalg",
+          "Moeder": []
+        },
+        {
+          "Id": "2f38f175-4dc7-4796-8cf6-406b17b50efa",
+          "Navn": "Økonomiudvalget",
+          "Moeder": [
+            {
+              "Id": "b6cafb6b-82a4-4472-95b9-8c7378267023",
+              "MeetingBeginUtc": "2026-08-31T11:00:00+02:00",
+              "MeetingEndUtc": "2026-08-31T12:00:00+02:00",
+              "ReleasedDate": "2026-09-04T08:36:42.0830577+02:00",
+              "Dato": "2026-08-31T11:00:00+02:00",
+              "Sted": "ML 1 – Hindsgavl",
+              "Afsluttet": true,
+              "Moededeltagere": null,
+              "Navn": "Dagsorden",
+              "Description": null,
+              "ElasticSearchResults": null,
+              "SourceId": null,
+              "IsSupplementaryAgenda": false
+            }
+          ]
+        }
+      ],
+      "Byrådet og politiske udvalg - Historisk": [
+        {
+          "Id": "7cb0be20-4488-4455-b3ef-6880f61bf4b5",
+          "Navn": "Beskæftigelses- og Arbejdsmarkedsudvalget 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "55beca03-7054-4e74-aaea-8a31f3248236",
+          "Navn": "Byrådet 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "1bf3d248-99ee-438d-8123-cc7eb54d9718",
+          "Navn": "Børn- Kultur og Fritidsudvalget 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "a86d34e8-43d7-4405-82e3-486b1039c4e0",
+          "Navn": "Miljø- og Energiudvalget 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "c4455b9c-2c13-4095-904b-3196408e404e",
+          "Navn": "Skoleudvalget 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "9bd7218d-4156-4152-adc5-7129242dcc38",
+          "Navn": "Social- og Sundhedsudvalget 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "ef794ece-719f-47a9-82e4-67e5603d4f79",
+          "Navn": "Teknisk Udvalg 2018-2021",
+          "Moeder": []
+        },
+        {
+          "Id": "771ad531-ca47-47aa-a24d-c68a4d689e71",
+          "Navn": "Økonomiudvalget 2018-2021",
+          "Moeder": []
+        }
+      ],
+      "Budget": [
+        {
+          "Id": "ef97c441-c2fd-4f1d-abb1-a6c2a8c51112",
+          "Navn": "Budget",
+          "Moeder": []
+        }
+      ]
+    }
+  },
+  "pairs": [
+    {
+      "oldRow": [
+        {
+          "$date": "2026-08-31T11:00:00+02:00"
+        },
+        "Referat",
+        "Økonomiudvalget",
+        "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+        "FirstAgenda API",
+        "FA:eda6afce-b214-4d95-bc1e-83b33137b2f6:bcd1eb3b-0baf-44ca-a015-527c41b044d6",
+        "https://dagsordener.middelfart.dk/vis?id=eda6afce-b214-4d95-bc1e-83b33137b2f6&punktid=bcd1eb3b-0baf-44ca-a015-527c41b044d6",
+        "PUNKT 120: Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart\n\nSagsnr: 2025-006342\n\nBeslutning\nAnbefales godkendt.\nLasse Schmücker og Maria Lund Nielsen deltog ikke i sagens behandling (afbud).\nPræsentation\nI marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.\nLokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.\nForvaltningen indstiller\nAt det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,\nAt det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,\nAt forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.\nSagsbeskrivelse\nVed igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c, Gartnerstiens samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.\nFor at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af Gartnerstiens forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af Gartnerstien , der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret.\nI løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.\nLokalplanforslag 238\nForslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.\nLokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.\nFor at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området . Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug.  Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.\nEndelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.\nForslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse.  Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.\nLokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne.\nLokalplanen sikrer endvidere etableringen af en andel af Gartnerstien , der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet  Gartnerparken , gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.\nEndelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området.\nBiofaktor\nJævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over 700 træer eller buske.\nDe grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. Gartnerparken , gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete rammeområde.\nKommuneplantillæg\nDa lokalplanforslaget ikke kan rummes indenfor gældende kommuneplanramme BE.01.03, er kommuneplantillæg nr. 4 blevet udarbejdet sideløbende med planforslaget. Kommuneplantillæg nr. 4 udlægger et nyt rammeområde, BE.01.11 ",
+        "Bilag 1 - Illustrationer.; Kommuneplantillæg nr. 4; .Miljøvurdering; .Lokalplan 236",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-01T09:00:00.000Z",
+        ""
+      ],
+      "targetRow": [
+        {
+          "$date": "2026-08-31T11:00:00+02:00"
+        },
+        "Referat",
+        "Økonomiudvalget",
+        "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+        "FirstAgenda API",
+        "FA:b6cafb6b-82a4-4472-95b9-8c7378267023:727e0c7d-58a1-421d-ba42-bac6e10ca9a9",
+        "https://dagsordener.middelfart.dk/vis?id=b6cafb6b-82a4-4472-95b9-8c7378267023&punktid=727e0c7d-58a1-421d-ba42-bac6e10ca9a9",
+        "PUNKT 120: Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart\n\nSagsnr: 2025-006342\n\nBeslutning\nAnbefales godkendt.\nLasse Schmücker og Maria Lund Nielsen deltog ikke i sagens behandling (afbud).\nAfbud: Lasse Schmücker, Maria Lund Nielsen\nPræsentation\nI marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.\nLokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.\nForvaltningen indstiller\nAt det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,\nAt det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,\nAt forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.\nSagsbeskrivelse\nVed igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c, Gartnerstiens samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.\nFor at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af Gartnerstiens forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af Gartnerstien , der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret.\nI løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.\nLokalplanforslag 238\nForslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.\nLokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.\nFor at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området . Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug.  Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.\nEndelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.\nForslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse.  Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.\nLokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne.\nLokalplanen sikrer endvidere etableringen af en andel af Gartnerstien , der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet  Gartnerparken , gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.\nEndelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området.\nBiofaktor\nJævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over 700 træer eller buske.\nDe grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. Gartnerparken , gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete rammeområde.\nKommuneplantillæg\nDa lokalplanforslaget ikke kan rummes indenfor gældende kommuneplanramme BE.01.03, er kommuneplantillæg nr. 4 blevet udarbejdet sideløbende med planforslaget. Kommuneplantillæg n",
+        "Bilag 1 - Illustrationer.; Kommuneplantillæg nr. 4; .Miljøvurdering; .Lokalplan 236",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-01T09:00:00.000Z",
+        "597363f2dcdd89f78420a15233a150ff827c2d9e3e1836eaeaf1315225b7bdb9"
+      ],
+      "expectedFreshTextLength": 13277,
+      "agenda": {
+        "Dagsordenpunkter": [
+          {
+            "Lydfiler": null,
+            "Ressourcer": null,
+            "Felter": [
+              {
+                "Navn": "",
+                "Html": "<div><div id='sagsfremstillingContainer'>\r\n\r\n<div><h3>Beslutning</h3>\r\n<span><p class=\"xsltFirstParagraph\">Anbefales godkendt.</p>\n<p>Lasse Schmücker og Maria Lund Nielsen deltog ikke i sagens behandling (afbud).</p><br><br>Afbud: Lasse Schmücker, Maria Lund Nielsen</span>\r\n</div>\r\n<h3>Præsentation</h3>\r\n<span class='ukendt'><div>\n<p>I marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.</p>\n<p>Lokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.</p>\n</div></span>\r\n\r\n<h3>Forvaltningen indstiller</h3>\r\n<span class='ukendt'><div>\n<p>At det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,</p>\n<p>At det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,</p>\n<p>At forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.</p>\n</div></span>\r\n\r\n<h3>Sagsbeskrivelse</h3>\r\n<span class='ukendt'><div>\n<p>Ved igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c,<em> Gartnerstiens </em>samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.  </p>\n<p>For at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af <em>Gartnerstiens</em> forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af <em>Gartnerstien</em>, der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret. </p>\n<p>I løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.</p>\n<p><span>Lokalplanforslag 238</span></p>\n<p><span> </span><span></span>Forslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.</p>\n<p>Lokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.</p>\n<p>For at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området<a>. Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug. </a><a>Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.</a> </p>\n<p>Endelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.</p>\n<p>Forslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse. <a>Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.</a></p>\n</div>\n<div><span>Lokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne. </span>\n<p>Lokalplanen sikrer endvidere etableringen af en andel af <em>Gartnerstien</em>, der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet <a><em>Gartnerparken</em></a>, gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.</p>\n<p><span>Endelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området. </span></p>\n<p><span>Biofaktor</span></p>\n<p>Jævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over <a>700 træer eller buske.</a></p>\n<p>De grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. <em>Gartnerparken</em>, gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete rammeområde.</p>\n<p><span>Kommuneplantillæg</span></p>\n<p>Da lokalplanforslaget ikke kan rummes indenfor gældende kommuneplanramme BE.01.03, er kommuneplantillæg nr. 4 blevet udarbejdet sideløbende med planforslaget. Kommuneplantillæg nr. 4 udlægger et nyt rammeområde, BE.01.11 – Jyllandsvej, Fynsvej og Sjællandsvej, og fastholder områdets anvendelse til blandet bolig og erhverv, men justerer rammebestemmelserne, så de understøtter den konkrete omdannelse af området.</p>\n<p>Den væsentligste ændring er, at den maksimale bebyggelsesprocent for området hæves fra 70 % til <a>88 %</a>, mens de gældende rammer for maksimalt etageantal og bygningshøjde fastholdes. Kommuneplantillægget justerer desuden rammerne for detailhandel og for overdækket cykelparkering.</p>\n<p>I forhold til detailhandel giver den eksisterende ramme mulighed for butikker på op til 100 m². Det nye rammeområde åbner for, at den enkelte dagligvarebutik kan være op til 250 m², mens udvalgsvarebutikker fortsat maksimalt må være 100 m². Udvidelsen begrundes med, at der ønskes mulighed for mindre dagligvarebutikker, såsom kiosk eller bager for dermed at understøtte et blandet kvarter med lokale forsyningsfunktioner.</p>\n<p>Tillægget justerer også de generelle rammer for overdækket cykelparkering. Kommuneplanen 2025-2033 fastsætter, at mindst 50 % af cykelparkeringen ved erhverv og etageboliger skal være overdækket. Med kommuneplantillægget reduceres dette i den nye ramme til 35 % for at mindske behovet for cykelskure i gårdrummene, så de vil fremstå som åbne rum med mulighed for ophold.</p>\n<p>Endelig giver kommuneplantillægget mulighed for at afvige fra kommuneplanens generelle krav om biofaktor. Tillægget muliggør, at biofaktoren i lokalplanområdet kan fastsættes lavere end 1,0 jf. kommuneplanen. <a>Dette begrundes i områdets karakter som et tæt byområde, hvor hensynet til funktionelle opholdsarealer, parkeringsløsninger og den samlede bymæssige disponering vægtes i den konkrete planlægning.</a></p>\n<p><span>Miljøvurdering</span></p>\n<p>Miljøvurderingen viser, at planforslaget vil medføre en øget trafikbelastning i området, særligt i krydset ved Sjællandsvej og Jyllandsvej, og peger derfor på behov for en fremtidig ombygning af krydset, herunder mulig signalregulering for at sikre en tilfredsstillende trafikafvikling og trafiksikkerhed.</p>\n<p>Miljørapporten viser desuden, at dele af planområdet er påvirket af både trafikstøj og virksomhedsstøj, og at planforslaget derfor medfører en moderat negativ påvirkning i forhold til støj. Lokalplanen håndterer dette ved at stille krav om, at Miljøstyrelsens vejledende grænseværdier for støj fra veje og virksomheder skal kunne overholdes, og at ny bebyggelse eller ændret anvendelse ikke må tages i brug, før dette er dokumenteret for facader, indendørs støjfølsomme rum og udendørs opholdsarealer.</p>\n<p>Miljørapporten peger herudover på, at støjen kan håndteres gennem støjdæmpende facadeløsninger, særligt støjisolerende vinduesopluk samt ved placering af opholdsrum og opholdsarealer på støjafskærmede sider.</p>\n<p class=\"BrdtekstMiddelfart\"><span>I forbindelse med lokalplanens udarbejdelse er der gennemført beregninger for luftemissioner og målinger af lugtpåvirkningen fra området udenfor lokalplanområdet. Undersøgelserne viser, at grænseværdierne kan overholdes for alle udledte emissioner. </span></p>\n</div></span>\r\n\r\n<div><h3>Økonomi</h3>\r\n<span class='oekonomi'><div>\n<p>Planforslaget medfører udgifter til vejanlæg ved ombygning af krydset ved Sjællandsvej/Jyllandsvej. Udgifterne til ombygningen af krydset afholdes af bygherre og Middelfart Kommune. Bygherre afholder 2 mio. kr. ud af i alt 4,2 mio. kr. af 1. etape af krydsombygningen. De resterende 2,2 mio. kroner finansieres af Middelfart Kommune.</p>\n</div></span>\r\n</div>\r\n<h3>Høring</h3>\r\n<span class='ukendt'><div>\n<p>Forslag til lokalplan 236 og kommuneplantillæg nr. 4 fremlægges i offentlig høring i 8 uger fra 2. september 2026 til 28. oktober 2026.  Den 15. september 2026 kl. 17.00 til 19.00, på Walker i Falstervejkvarteret, afholder Middelfart Kommune et borgermøde, hvor der vil være mulighed stille spørgsmål og høre mere om planlægningen.</p>\n<p>I høringsperioden vil borgere, myndigheder og øvrige interessenter have mulighed for at indsende bemærkninger til planforslaget. </p>\n<p>Indkomne høringssvar vil blive behandlet i forbindelse med den endelige vedtagelse af planen.</p>\n</div></span>\r\n\r\n<h3>Klima & bæredygtighed</h3>\r\n<span class='ukendt'><div>\n<p>Lokalplanen understøtter kommunens klimamål ved at omdanne et eksisterende erhvervsområde til et tæt, bymæssigt bebygget område, hvilket bidrager til en mere bæredygtig arealudnyttelse.</p>\n<p>Planen indeholder krav om lokal håndtering af regnvand og integrerer blå-grønne løsninger i bystrukturen. Der er fokus på genanvendelse og transformation af eksisterende bygninger, hvilket reducerer ressourceforbrug og CO₂-belastning. <a>Sideløbende med udarbejdelsen af lokalplanen, har forvaltningen udarbejdet en co2-screening af lokalplanens klimapåvirkning. Screeningen forudsætter, at planområdet udbygges fuldt ud i overensstemmelse med lokalplanens bestemmelser. I forlængelse heraf viser co2-screeningen, at bevaring og transformation af Toyota-huset, Toyota-lageret og Telthallen afstedkommer en co2-besparelse på 17% sammenlignet med, hvis de eksisterende bygninger var blevet revet ned og genopført. Se bilag 1 for illustration af co2-screening. </a></p>\n<p>Med <i>Gartnerstien</i> planlægges området med gode forhold for fodgængere og cyklister, hvilket bidrager til, at der opnås gode forbindelser til Middelfart Midtby.</p>\n</div>\n<p><strong>Behandlingsplan:</strong><br>\nTeknisk Udvalg den 31. august 2026<br>\nØkonomiudvalget den 31. august 2026<br>\nByrådet den 31. august 2026</p></span>\r\n\r\n<h3>Sagens forløb</h3>\r\n<span class='sagsforloeb'><u>31/08/2026 Teknisk Udvalg</u><br>\r\nGodkendt<br>\r\n\r\n</span>\r\n\r\n\r\n</div></div>",
+                "Tekst": null,
+                "Id": "00000000-0000-0000-0000-000000000000",
+                "Link": "https://dagsordener.middelfart.dk/Vis/Pdf/bilag/4716d94c-8e05-466c-ad2b-4621dce25003",
+                "DocumentId": "4716d94c-8e05-466c-ad2b-4621dce25003"
+              }
+            ],
+            "Presentations": null,
+            "ItemDecision": null,
+            "SagsNummer": "2025-006342",
+            "Navn": "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+            "Punktnummer": "120",
+            "Bilag": [
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": "Bilag 1 - Illustrationer.",
+                "Id": "4a4fc18c-4207-4211-b1e7-ad7ac5201adf"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": "Kommuneplantillæg nr. 4",
+                "Id": "8c4ed606-6188-4073-a891-9f24089040ba"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": ".Miljøvurdering",
+                "Id": "643e557d-14b7-440f-b612-b29c367c09d9"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": ".Lokalplan 236",
+                "Id": "a9be4c4f-1938-4e0d-a75d-d75e35d628a8"
+              }
+            ],
+            "Documents": null,
+            "Id": "727e0c7d-58a1-421d-ba42-bac6e10ca9a9",
+            "IntegrationUid": "00000000-0000-0000-0000-000000000000",
+            "CorporationUid": "00000000-0000-0000-0000-000000000000",
+            "AgendaUid": "b6cafb6b-82a4-4472-95b9-8c7378267023",
+            "Number": "120",
+            "Sorting": 1,
+            "IsOpen": true,
+            "CaseNumber": "2025-006342",
+            "SourceId": "75f89664-df73-4f62-82e2-d0a80d4222d9",
+            "Caption": "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+            "CasePresentationUid": null,
+            "ExternalAgendaItemAttendees": []
+          }
+        ],
+        "Udvalg": {
+          "Id": "2f38f175-4dc7-4796-8cf6-406b17b50efa",
+          "OrganisationId": "e051f2f9-29af-4721-b925-62f912341109",
+          "Navn": "Økonomiudvalget",
+          "Historisk": false
+        },
+        "Moede": {
+          "Id": "00000000-0000-0000-0000-000000000000",
+          "MeetingBeginUtc": "2026-08-31T11:00:00+02:00",
+          "MeetingEndUtc": null,
+          "ReleasedDate": null,
+          "Dato": "2026-08-31T11:00:00+02:00",
+          "Sted": "ML 1 – Hindsgavl",
+          "Afsluttet": true,
+          "Moededeltagere": [
+            {
+              "Name": "Jacob Bjørnskov Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Anja Reilev",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Anders Møllegård",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Jonas René Jensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Louise Mejnert Ferslev",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Johannes Lundsfryd Jensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Lasse Schmücker",
+              "Absent": false,
+              "ParticipationCancelled": true,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Linda Johnsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Ulla Sørensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Maria Lund Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": true,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Steffen Daugaard",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            }
+          ],
+          "Navn": "Dagsorden",
+          "Description": "",
+          "ElasticSearchResults": null,
+          "SourceId": "7867e088-9118-43b6-b477-0a53a9dbc886",
+          "IsSupplementaryAgenda": false
+        },
+        "TillaegsDagsorden": false,
+        "Id": "b6cafb6b-82a4-4472-95b9-8c7378267023",
+        "Lydfiler": null,
+        "LiveIntegrationEnabled": false
+      },
+      "httpEvidence": {
+        "url": "https://dagsordener.middelfart.dk/api/agenda/dagsorden/b6cafb6b-82a4-4472-95b9-8c7378267023",
+        "method": "GET",
+        "http": 200,
+        "contentType": "application/json; charset=utf-8",
+        "serverDate": "Wed, 09 Sep 2026 10:57:35 GMT",
+        "bytes": 18778,
+        "sha256": "d0a8bec20e42d94af062818390764b660ed8b112bd299b9c2319915cc544766c",
+        "finishedAt": "2026-09-09T10:57:36.604999+00:00"
+      },
+      "label": "Økonomiudvalget / punkt 120 / 2025-006342",
+      "analysisStates": {
+        "old": "pending",
+        "current": "pending"
+      }
+    },
+    {
+      "oldRow": [
+        {
+          "$date": "2026-08-31T17:00:00+02:00"
+        },
+        "Referat",
+        "Byrådet",
+        "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+        "FirstAgenda API",
+        "FA:35e18641-7f29-403a-84fe-5b6814a6ed8d:d88f703f-3370-4bde-b6c1-faf6ec2038f2",
+        "https://dagsordener.middelfart.dk/vis?id=35e18641-7f29-403a-84fe-5b6814a6ed8d&punktid=d88f703f-3370-4bde-b6c1-faf6ec2038f2",
+        "PUNKT 108: Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart\n\nSagsnr: 2025-006342\n\nBeslutning\nTeknisk udvalg har godkendt forslaget til lokalplan, og Økonomiudvalget anbefalet samme. I behandlingen i Økonomiudvalget var der afbud fra Maria Lund Nielsen og Lasse Schmücker.\nBorgermødet er den 15. september\nByrådet godkendte indstillingen fra Teknisk udvalg.\nMaria Lund Nielsen deltog ikke i sagens behandling (afbud).\nAfbud: Maria Lund Nielsen\nPræsentation\nI marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.\nLokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.\nForvaltningen indstiller\nAt det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,\nAt det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,\nAt forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.\nSagsbeskrivelse\nVed igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c, Gartnerstiens samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.\nFor at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af Gartnerstiens forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af Gartnerstien , der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret.\nI løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.\nLokalplanforslag 238\nForslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.\nLokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.\nFor at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området . Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug.  Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.\nEndelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.\nForslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse.  Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.\nLokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne.\nLokalplanen sikrer endvidere etableringen af en andel af Gartnerstien , der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet  Gartnerparken , gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.\nEndelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området.\nBiofaktor\nJævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over 700 træer eller buske.\nDe grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. Gartnerparken , gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete r",
+        "Bilag 1 - Illustrationer.; Kommuneplantillæg nr. 4; .Miljøvurdering; .Lokalplan 236",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-02T09:00:00.000Z",
+        ""
+      ],
+      "targetRow": [
+        {
+          "$date": "2026-08-31T17:00:00+02:00"
+        },
+        "Referat",
+        "Byrådet",
+        "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+        "FirstAgenda API",
+        "FA:5112404c-ad60-4b0a-95bc-5fa84c0e0084:db2c7258-ae32-4a7f-8d94-0b3ddaffc755",
+        "https://dagsordener.middelfart.dk/vis?id=5112404c-ad60-4b0a-95bc-5fa84c0e0084&punktid=db2c7258-ae32-4a7f-8d94-0b3ddaffc755",
+        "PUNKT 108: Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart\n\nSagsnr: 2025-006342\n\nBeslutning\nTeknisk udvalg har godkendt forslaget til lokalplan, og Økonomiudvalget anbefalet samme. I behandlingen i Økonomiudvalget var der afbud fra Maria Lund Nielsen og Lasse Schmücker.\nBorgermødet er den 15. september\nByrådet godkendte indstillingen fra Teknisk udvalg.\nMaria Lund Nielsen deltog ikke i sagens behandling (afbud).\nAfbud: Maria Lund Nielsen\nPræsentation\nI marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.\nLokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.\nForvaltningen indstiller\nAt det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,\nAt det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,\nAt forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.\nSagsbeskrivelse\nVed igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c, Gartnerstiens samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.\nFor at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af Gartnerstiens forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af Gartnerstien , der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret.\nI løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.\nLokalplanforslag 238\nForslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.\nLokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.\nFor at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området . Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug.  Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.\nEndelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.\nForslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse.  Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.\nLokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne.\nLokalplanen sikrer endvidere etableringen af en andel af Gartnerstien , der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet  Gartnerparken , gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.\nEndelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området.\nBiofaktor\nJævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over 700 træer eller buske.\nDe grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. Gartnerparken , gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete r",
+        "Bilag 1 - Illustrationer.; Kommuneplantillæg nr. 4; .Miljøvurdering; .Lokalplan 236",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "2026-09-02T09:00:00.000Z",
+        "1ebdad17b72e57327599a9e47e102da45d2748adcee223e00846ebb9f0269a4b"
+      ],
+      "expectedFreshTextLength": 13654,
+      "agenda": {
+        "Dagsordenpunkter": [
+          {
+            "Lydfiler": null,
+            "Ressourcer": null,
+            "Felter": [
+              {
+                "Navn": "",
+                "Html": "<div><div id='sagsfremstillingContainer'>\r\n\r\n<div><h3>Beslutning</h3>\r\n<span><p class=\"xsltFirstParagraph\">Teknisk udvalg har godkendt forslaget til lokalplan, og Økonomiudvalget anbefalet samme. I behandlingen i Økonomiudvalget var der afbud fra Maria Lund Nielsen og Lasse Schmücker.</p>\n<p>Borgermødet er den 15. september</p>\n<p>Byrådet godkendte indstillingen fra Teknisk udvalg.</p>\n<p>Maria Lund Nielsen deltog ikke i sagens behandling (afbud).</p><br><br>Afbud: Maria Lund Nielsen</span>\r\n</div>\r\n<h3>Præsentation</h3>\r\n<span class='ukendt'><div>\n<p>I marts 2025 besluttede Økonomiudvalget at igangsætte kommune- og lokalplanlægning for bolig og erhverv på matrikel 6i og 8c, Middelfart Jorder. Forvaltningen har nu udarbejdet forslag til lokalplan 236, der skal muliggøre omdannelsen af eksisterende bebyggelse på matrikel 6i til et nyt blandet byområde med boliger og erhverv som led i udviklingen af Falstersvejkvarteret.</p>\n<p>Lokalplanen udgør første del af den samlede byomdannelse af området fra tidligere industri- og erhvervsområde til et attraktivt og bæredygtigt bykvarter.</p>\n</div></span>\r\n\r\n<h3>Forvaltningen indstiller</h3>\r\n<span class='ukendt'><div>\n<p>At det godkendes, at planlægningen af Falstersvejkvarteret opdeles i to separate lokalplaner; en byggeretsgivende lokalplan for matrikel 6i og en rammelokalplan for den øvrige del af Falstersvejkvarteret,</p>\n<p>At det godkendes, at kommuneplantillæg nr. 4 fraviger Kommuneplan 2025-2033 for så vidt angår bebyggelsesprocent, bebyggelseshøjde, biofaktor og krav om overdækket cykelparkering,</p>\n<p>At forslag til lokalplan 236 og tilhørende kommuneplantillæg nr. 4 godkendes og fremlægges i offentlig høring i 8 uger.</p>\n</div></span>\r\n\r\n<h3>Sagsbeskrivelse</h3>\r\n<span class='ukendt'><div>\n<p>Ved igangsætningen af kommune- og lokalplanlægningen i Falstersvejkvarteret skulle lokalplanen fastlægge byggeretsgivende bestemmelser for matriklerne 6i og 8c,<em> Gartnerstiens </em>samlede forløb samt sikre tilstrækkeligt areal til fremtidige udvidelser af Fynsvej, Sjællandsvej og Falstersvej. Derudover skulle lokalplanen også udpege og fastlægge retningslinjer for en fremtidig planlægning af de øvrige matrikler i Falstersvejkvarteret.  </p>\n<p>For at forenkle og sikre fremdrift i planprocessen valgte forvaltningen i samråd med bygherre imidlertid at adskille planlægningen for Falstersvejkvarteret i to separate lokalplaner; en for matriklerne 6i og 8c samt den del af <em>Gartnerstiens</em> forløb, der er placeret på de to matrikler; og en rammelokalplan for den øvrige del af Falstersvejkvarteret. Rammelokalplanen skal fastlægge byggeretsgivende bestemmelser for de dele af <em>Gartnerstien</em>, der ikke er omfattet af lokalplanforslag 236 samt fastlægge retningslinjer for den fremtidige planlægning af den øvrige del af Falstersvejkvarteret. </p>\n<p>I løbet af lokalplanprocessen for udarbejdelsen af lokalplanforslag 236 besluttede ejeren af matrikel 8c imidlertid at træde ud af lokalplanprocessen, hvorfor lokalplanforslag 236 alene omfatter matrikel 6i. Se bilag 1 for illustration af lokalplanens afgrænsning.</p>\n<p><span>Lokalplanforslag 238</span></p>\n<p><span> </span><span></span>Forslag til lokalplan 236 er udarbejdet med afsæt i udviklingsplanen for Falstersvejkvarteret, som Middelfart Byråd vedtog i januar 2024. Lokalplanforslaget har derfor til formål at omsætte udviklingsplanens visioner for omdannelsen af Falstersvejkvarteret fra et tidligere industri- og erhvervsområde til et nyt blandet byområde.</p>\n<p>Lokalplanforslaget omfatter et område på ca. 6,5 ha og udgør dermed en mindre del af det ca. 32 ha store erhvervsområde, som på sigt skal omdannes. Forslaget er således et led i den gradvise realisering af udviklingsplanens intentioner om en samlet byomdannelse af kvarteret. Med afsæt heri fastlægger lokalplanen områdets anvendelse til boligformål samt erhverv i form af kontor- og serviceerhverv, publikumsorienterede serviceerhverv, mindre butikker, offentlig formål i form af plejehjem, værkstedsprægede erhverv samt kultur- og fritidsfunktioner.</p>\n<p>For at understøtte realiseringen af udviklingsplanen, sikrer lokalplanforslaget, at dele af den eksisterende bebyggelse skal bevares og gennem transformation indgå aktivt i områdets fremtidige udvikling, så stedets identitet og industrielle karakter videreføres som en del af området<a>. Kun en enkelt mindre bygning kræves ikke bevaret, fordi den ville vanskeliggørelse opførelse af p-hus, og fordi en nærmere vurdering af bygningen har vist, at den ikke er egnet til brug. </a><a>Dette niveau af bevaring/ transformation i et område af denne type er banebrydende, og bestemmelserne er udviklet i samarbejde med eksperter og bygherre for at sikre udviklingsplanens principper for bevaring og identitet bedst muligt.</a> </p>\n<p>Endelig stiller planen krav til ny bebyggelses omfang, placering, materialer og arkitektoniske udtryk, så nybyg forankres i områdets industrihistorie og bidrager til områdets identitet som industriområde. Lokalplanforslaget giver mulighed for etablering af op til ca. 423 boliger, der skal vejforsynes fra Fynsvej og Sjællandsvej.</p>\n<p>Forslaget giver mulighed for, at boligbebyggelse kan opføres i kombination med erhverv, herunder kontor, offentlige formål i form af plejehjem, service, små værksteder og butikker og rekreative funktioner. Planen fastlægger et maksimalt etageantal på 5 og en samlet bebyggelsesprocent på 88, hvilket understøttes af kommuneplantillæg nr. 4, der er udarbejdet med henblik på at justere kommuneplanrammen for området. Lokalplanen fastsætter samtidig bestemmelser for bebyggelsens placering og boligstørrelser med henblik på at understøtte et mangfoldigt boligudbud, hvor facadematerialer og tagformer bidrager til en varieret bebyggelse. <a>Endelig er der fokus på fællesfaciliteter, da der skal indrettes fællesrum (f.eks. fællesopholdsrum, fællesværksteder eller lignende) svarende til minimum 2 % af boligetagearealet (relativt meget), før ny bebyggelse kan tages i brug. Se bilag 1 for illustration af kombinerede facadematerialer.</a></p>\n</div>\n<div><span>Lokalplanen fastlægger også, at minimum 70% af parkering indenfor lokalplanområdet skal placeres i konstruktion (P-hus eller lignende), hvilket skal frigøre plads til områdets forskelligartede byfunktioner, mindske bilernes visuelle dominans i området, begrænse intern søgetrafik og bidrage til en god tilgængelighed til området for beboerne. </span>\n<p>Lokalplanen sikrer endvidere etableringen af en andel af <em>Gartnerstien</em>, der både skal fungere som en central forbindelse på tværs af Falstersvejkvarteret og som en del af de rekreative opholdsarealer, planen fastlægger. I forlængelse heraf fastlægger forslaget, at grønne og ubebyggede arealer skal udgøre en bærende del af området. Lokalplanen fastlægger således, at fællesarealet <a><em>Gartnerparken</em></a>, gårdrum og kantzoner skal etableres for at understøtte rekreativt ophold. Lokalplanen sikrer herudover, at gårdrummene får en markant grøn karakter, og at de grønne opholdsarealer kombineres med fællesfunktioner som stier, mødesteder og aktivitetsområder. Se bilag 1 for illustration af Gartnerstien og mødeplads.</p>\n<p><span>Endelig er regnvandshåndteringen integreret som en del af områdets opholdsarealer, hvor håndtering af regnvand i grøfter, lavninger, regnbede og øvrige beplantede anlæg indgår som rekreative og landskabelige elementer i området. </span></p>\n<p><span>Biofaktor</span></p>\n<p>Jævnfør Kommuneplan 2025-2033 skal biofaktoren for fælles opholds- og friarealer i boligområder være 1,0. Beregning af biofaktoren for lokalplan 238 kan imidlertid opgøres til 0,31, hvilket afviger fra kommuneplanens generelle retningslinje om biofaktor. Afvigelsen begrundes med, at området er et tæt og overvejende befæstet blandet bolig- og erhvervsområde, hvor biofaktor-retningslinjerne ikke vurderes at være et virkemiddel, der i lokalplanforslaget kan sikre en proportionel sammenhæng mellem beplantning og tilstrækkeligt store opholdsarealer. Skulle planen opnå en biofaktor på 1,0 ville det forudsætte, at der på opholdsarealerne skulle etableres over <a>700 træer eller buske.</a></p>\n<p>De grønne og klimatilpassende hensyn sikres gennem områdespecifikke bestemmelser om bl.a. <em>Gartnerparken</em>, gårdrum, beplantning og regnvandshåndtering, og kommuneplantillæg nr. 4 skaber den nødvendige planmæssige hjemmel for afvigelsen inden for det konkrete rammeområde.</p>\n<p><span>Kommuneplantillæg</span></p>\n<p>Da lokalplanforslaget ikke kan rummes indenfor gældende kommuneplanramme BE.01.03, er kommuneplantillæg nr. 4 blevet udarbejdet sideløbende med planforslaget. Kommuneplantillæg nr. 4 udlægger et nyt rammeområde, BE.01.11 – Jyllandsvej, Fynsvej og Sjællandsvej, og fastholder områdets anvendelse til blandet bolig og erhverv, men justerer rammebestemmelserne, så de understøtter den konkrete omdannelse af området.</p>\n<p>Den væsentligste ændring er, at den maksimale bebyggelsesprocent for området hæves fra 70 % til <a>88 %</a>, mens de gældende rammer for maksimalt etageantal og bygningshøjde fastholdes. Kommuneplantillægget justerer desuden rammerne for detailhandel og for overdækket cykelparkering.</p>\n<p>I forhold til detailhandel giver den eksisterende ramme mulighed for butikker på op til 100 m². Det nye rammeområde åbner for, at den enkelte dagligvarebutik kan være op til 250 m², mens udvalgsvarebutikker fortsat maksimalt må være 100 m². Udvidelsen begrundes med, at der ønskes mulighed for mindre dagligvarebutikker, såsom kiosk eller bager for dermed at understøtte et blandet kvarter med lokale forsyningsfunktioner.</p>\n<p>Tillægget justerer også de generelle rammer for overdækket cykelparkering. Kommuneplanen 2025-2033 fastsætter, at mindst 50 % af cykelparkeringen ved erhverv og etageboliger skal være overdækket. Med kommuneplantillægget reduceres dette i den nye ramme til 35 % for at mindske behovet for cykelskure i gårdrummene, så de vil fremstå som åbne rum med mulighed for ophold.</p>\n<p>Endelig giver kommuneplantillægget mulighed for at afvige fra kommuneplanens generelle krav om biofaktor. Tillægget muliggør, at biofaktoren i lokalplanområdet kan fastsættes lavere end 1,0 jf. kommuneplanen. <a>Dette begrundes i områdets karakter som et tæt byområde, hvor hensynet til funktionelle opholdsarealer, parkeringsløsninger og den samlede bymæssige disponering vægtes i den konkrete planlægning.</a></p>\n<p><span>Miljøvurdering</span></p>\n<p>Miljøvurderingen viser, at planforslaget vil medføre en øget trafikbelastning i området, særligt i krydset ved Sjællandsvej og Jyllandsvej, og peger derfor på behov for en fremtidig ombygning af krydset, herunder mulig signalregulering for at sikre en tilfredsstillende trafikafvikling og trafiksikkerhed.</p>\n<p>Miljørapporten viser desuden, at dele af planområdet er påvirket af både trafikstøj og virksomhedsstøj, og at planforslaget derfor medfører en moderat negativ påvirkning i forhold til støj. Lokalplanen håndterer dette ved at stille krav om, at Miljøstyrelsens vejledende grænseværdier for støj fra veje og virksomheder skal kunne overholdes, og at ny bebyggelse eller ændret anvendelse ikke må tages i brug, før dette er dokumenteret for facader, indendørs støjfølsomme rum og udendørs opholdsarealer.</p>\n<p>Miljørapporten peger herudover på, at støjen kan håndteres gennem støjdæmpende facadeløsninger, særligt støjisolerende vinduesopluk samt ved placering af opholdsrum og opholdsarealer på støjafskærmede sider.</p>\n<p class=\"BrdtekstMiddelfart\"><span>I forbindelse med lokalplanens udarbejdelse er der gennemført beregninger for luftemissioner og målinger af lugtpåvirkningen fra området udenfor lokalplanområdet. Undersøgelserne viser, at grænseværdierne kan overholdes for alle udledte emissioner. </span></p>\n</div></span>\r\n\r\n<div><h3>Økonomi</h3>\r\n<span class='oekonomi'><div>\n<p>Planforslaget medfører udgifter til vejanlæg ved ombygning af krydset ved Sjællandsvej/Jyllandsvej. Udgifterne til ombygningen af krydset afholdes af bygherre og Middelfart Kommune. Bygherre afholder 2 mio. kr. ud af i alt 4,2 mio. kr. af 1. etape af krydsombygningen. De resterende 2,2 mio. kroner finansieres af Middelfart Kommune.</p>\n</div></span>\r\n</div>\r\n<h3>Høring</h3>\r\n<span class='ukendt'><div>\n<p>Forslag til lokalplan 236 og kommuneplantillæg nr. 4 fremlægges i offentlig høring i 8 uger fra 2. september 2026 til 28. oktober 2026.  Den 15. september 2026 kl. 17.00 til 19.00, på Walker i Falstervejkvarteret, afholder Middelfart Kommune et borgermøde, hvor der vil være mulighed stille spørgsmål og høre mere om planlægningen.</p>\n<p>I høringsperioden vil borgere, myndigheder og øvrige interessenter have mulighed for at indsende bemærkninger til planforslaget. </p>\n<p>Indkomne høringssvar vil blive behandlet i forbindelse med den endelige vedtagelse af planen.</p>\n</div></span>\r\n\r\n<h3>Klima & bæredygtighed</h3>\r\n<span class='ukendt'><div>\n<p>Lokalplanen understøtter kommunens klimamål ved at omdanne et eksisterende erhvervsområde til et tæt, bymæssigt bebygget område, hvilket bidrager til en mere bæredygtig arealudnyttelse.</p>\n<p>Planen indeholder krav om lokal håndtering af regnvand og integrerer blå-grønne løsninger i bystrukturen. Der er fokus på genanvendelse og transformation af eksisterende bygninger, hvilket reducerer ressourceforbrug og CO₂-belastning. <a>Sideløbende med udarbejdelsen af lokalplanen, har forvaltningen udarbejdet en co2-screening af lokalplanens klimapåvirkning. Screeningen forudsætter, at planområdet udbygges fuldt ud i overensstemmelse med lokalplanens bestemmelser. I forlængelse heraf viser co2-screeningen, at bevaring og transformation af Toyota-huset, Toyota-lageret og Telthallen afstedkommer en co2-besparelse på 17% sammenlignet med, hvis de eksisterende bygninger var blevet revet ned og genopført. Se bilag 1 for illustration af co2-screening. </a></p>\n<p>Med <i>Gartnerstien</i> planlægges området med gode forhold for fodgængere og cyklister, hvilket bidrager til, at der opnås gode forbindelser til Middelfart Midtby.</p>\n</div>\n<p><strong>Behandlingsplan:</strong><br>\nTeknisk Udvalg den 31. august 2026<br>\nØkonomiudvalget den 31. august 2026<br>\nByrådet den 31. august 2026</p></span>\r\n\r\n<h3>Sagens forløb</h3>\r\n<span class='sagsforloeb'><u>31/08/2026 Teknisk Udvalg</u><br>\r\nGodkendt<br>\r\n\r\n<u>31/08/2026 Økonomiudvalget</u><br>\r\n<p class=\"xsltFirstParagraph\">Anbefales godkendt.</p>\n<p>Lasse Schmücker og Maria Lund Nielsen deltog ikke i sagens behandling (afbud).</p><br>\r\n<br>Afbud: Lasse Schmücker, Maria Lund Nielsen\r\n<br>\r\n\r\n</span>\r\n\r\n\r\n</div></div>",
+                "Tekst": null,
+                "Id": "00000000-0000-0000-0000-000000000000",
+                "Link": "https://dagsordener.middelfart.dk/Vis/Pdf/bilag/a918c296-153a-4362-8010-3c96bdcd4470",
+                "DocumentId": "a918c296-153a-4362-8010-3c96bdcd4470"
+              }
+            ],
+            "Presentations": null,
+            "ItemDecision": null,
+            "SagsNummer": "2025-006342",
+            "Navn": "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+            "Punktnummer": "108",
+            "Bilag": [
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": "Bilag 1 - Illustrationer.",
+                "Id": "b186008c-b226-4858-8ff8-26c67226fcc8"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": "Kommuneplantillæg nr. 4",
+                "Id": "95b68f04-2a11-4f9b-9b38-99fd50f98358"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": ".Miljøvurdering",
+                "Id": "c21f2079-14fe-4f40-94f3-babab5f3b909"
+              },
+              {
+                "HarPdfVersion": "true",
+                "Order": 0,
+                "Navn": ".Lokalplan 236",
+                "Id": "60adc685-7f66-4745-ac41-f4cd14306376"
+              }
+            ],
+            "Documents": null,
+            "Id": "db2c7258-ae32-4a7f-8d94-0b3ddaffc755",
+            "IntegrationUid": "00000000-0000-0000-0000-000000000000",
+            "CorporationUid": "00000000-0000-0000-0000-000000000000",
+            "AgendaUid": "5112404c-ad60-4b0a-95bc-5fa84c0e0084",
+            "Number": "108",
+            "Sorting": 11,
+            "IsOpen": true,
+            "CaseNumber": "2025-006342",
+            "SourceId": "ed563670-16f8-451e-b012-902c9cdcad94",
+            "Caption": "Forslag til lokalplan 236, Område til Blandet bolig og erhverv ved Sjællandsvej i Falstervejkvarteret, Middelfart",
+            "CasePresentationUid": null,
+            "ExternalAgendaItemAttendees": []
+          }
+        ],
+        "Udvalg": {
+          "Id": "d914f458-83f8-4aa1-b9e4-03018f9d14ab",
+          "OrganisationId": "e051f2f9-29af-4721-b925-62f912341109",
+          "Navn": "Byrådet",
+          "Historisk": false
+        },
+        "Moede": {
+          "Id": "00000000-0000-0000-0000-000000000000",
+          "MeetingBeginUtc": "2026-08-31T17:00:00+02:00",
+          "MeetingEndUtc": null,
+          "ReleasedDate": null,
+          "Dato": "2026-08-31T17:00:00+02:00",
+          "Sted": "Byrådssalen",
+          "Afsluttet": true,
+          "Moededeltagere": [
+            {
+              "Name": "Kim Lund",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Amalie Kallesøe Bergholdt",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Lasse Schmücker",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Anders Møllegård",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Steen Dahlstrøm",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Ulla Sørensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Kent Mosgård",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Anja Reilev",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Lars Vigsø",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Jes Rønn Hansen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Louise Gade Ellekrog",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Linda Johnsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Susanne-Rikke Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Steffen Daugaard",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Jacob Bjørnskov Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Louise Mejnert Ferslev",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Mads Brodersen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Jonas René Jensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Johannes Lundsfryd Jensen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Majken Andersen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Maria Lund Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": true,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Mads Emil Møller",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Karin Riishede",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Kaj Piilgaard Nielsen",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            },
+            {
+              "Name": "Line Thingberg",
+              "Absent": false,
+              "ParticipationCancelled": false,
+              "AttendanceType": 0
+            }
+          ],
+          "Navn": "Dagsorden",
+          "Description": "<div><edoc:descriptiontext>\r       </edoc:descriptiontext></div>\r ",
+          "ElasticSearchResults": null,
+          "SourceId": "5139101c-d85f-4f93-a3c4-74fd1e697076",
+          "IsSupplementaryAgenda": false
+        },
+        "TillaegsDagsorden": false,
+        "Id": "5112404c-ad60-4b0a-95bc-5fa84c0e0084",
+        "Lydfiler": null,
+        "LiveIntegrationEnabled": false
+      },
+      "httpEvidence": {
+        "url": "https://dagsordener.middelfart.dk/api/agenda/dagsorden/5112404c-ad60-4b0a-95bc-5fa84c0e0084",
+        "method": "GET",
+        "http": 200,
+        "contentType": "application/json; charset=utf-8",
+        "serverDate": "Wed, 09 Sep 2026 10:57:36 GMT",
+        "bytes": 985482,
+        "sha256": "8438ab76dd7ab29aef0478a8b12536be7b8956926aac51f675746fb7fe2147b8",
+        "finishedAt": "2026-09-09T10:57:37.164769+00:00"
+      },
+      "label": "Byrådet / punkt 108 / 2025-006342",
+      "analysisStates": {
+        "old": "pending",
+        "current": "pending"
+      }
+    }
+  ]
+}

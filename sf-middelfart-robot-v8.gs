@@ -35,7 +35,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    KONFIGURATION
    ═══════════════════════════════════════════════════════════════════════ */
-const ROBOT_VERSION = "8.2.0-validation";
+const ROBOT_VERSION = "8.2.1-validation";
 const SOURCE_REPLACEMENT_HEADER = "Erstattet af kilde-ID";
 // Inline-PDF: 30 MiB dekodet pr. fil og samlet (~40 MiB base64).
 // Hele JSON-requesten må fylde 45 MiB UTF-8, inkl. instruktioner/tekst/skema.
@@ -464,7 +464,7 @@ function ingestFirstAgendaLocked_() {
   const cursor = props.getProperty("FA_SCAN_NEXT_ID");
   const nextIndex = meetings.findIndex(x => String(x.meeting.Id) === cursor);
   const ordered = nextIndex > 0 ? meetings.slice(nextIndex).concat(meetings.slice(0,nextIndex)) : meetings;
-  let updated = 0;
+  let updated = 0, enriched = 0;
   const freshAgendas = [];
   for (let i = 0; i < ordered.length; i++) {
     const {committee, meeting, date} = ordered[i];
@@ -494,6 +494,13 @@ function ingestFirstAgendaLocked_() {
           "", "", "", "", "", "", (old ? now : (parseDate_(meeting.ReleasedDate) || date)).toISOString(), fingerprint];
         sheet.getRange(rowIndex, 1, 1, 17).setValues([row.map(sheetText_)]);
         existing.set(id, {row: row.concat(old ? old.row.slice(17) : []), index:rowIndex}); updated++;
+      } else if (old.row[16] && old.row[16] === fingerprint && typeof old.row[7] === "string"
+          && old.row[7].length === 8000 && content.length > 8000 && content.startsWith(old.row[7])) {
+        // Kendt gammel afkortning af samme fulde kilde: bevar analyse og kildedato.
+        const snippet = content.slice(0, 45000);
+        sheet.getRange(rowIndex, 8).setValue(sheetText_(snippet));
+        old.row[7] = snippet;
+        enriched++;
       } else if (!old.row[16]) {
         // Første gennemløb etablerer en baseline uden at genudgive hele historikken.
         sheet.getRange(rowIndex, 17).setValue(fingerprint);
@@ -505,6 +512,7 @@ function ingestFirstAgendaLocked_() {
   }
   const retired = retireReplacedSources_(sheet, catalog, freshAgendas);
   if (retired) console.log(`🗂️ ${retired} kilder erstattet af ny kilde med samme type; historik bevaret (ingen analysereparation)`);
+  if (enriched) console.log(`📝 ${enriched} eksisterende kildetekster udvidet uden kildeændring eller analysereparation`);
   console.log(`📡 ${ROBOT_VERSION}: ${updated} nye/ændrede kildepunkter gemt; analyse følger separat`);
 }
 

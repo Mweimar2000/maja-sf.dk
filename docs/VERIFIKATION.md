@@ -2,7 +2,7 @@
 
 Målet er, at tekniske fejl forbliver synlige og genforsøges, at originale kilder følger med analysen, og at faktatjek aldrig præsenterer et tomt eller ugyldigt modelsvar som en verificeret kladde.
 
-**Seneste status, 9. september 2026 kl. 13.10.30:** `8.2.0-validation` er installeret; 296/296 lokale tests består. Indsamlingen har registreret 39 kildeerstatninger i R med bevaret A–Q. Der er 347 aktive mangler og fortsat 14 dokumenterede analysereparationer. En ny rigtig tekst med statusrettelserne mangler stadig redaktionel accept. [Driftsstatus](#driftsstatus-9-september-2026) og [GitHub-status](#github-status-9-september-2026) skelner mellem installation, lokale tests og publiceringskontrol.
+**Status 9. september 2026 kl. 13.32.44: `8.2.1-validation` er installeret i Apps Script, og 315/315 lokale tests består.** Hele hovedfilen er genlæst og matcher SHA-256 `4709e03b7fc5b018b7431f256fd082d03ee3310f31e05f9f3bd37c14f1515204` efter normalisering af linjeskift. En ny rigtig nyhedsbrevstekst med statusrettelserne kunne endnu ikke produceres og kontrolleres på grund af kvoter og overbelastning. Der er 341 aktive mangler og fortsat 14 dokumenterede analysereparationer. [Driftsstatus](#driftsstatus-9-september-2026) og [GitHub-status](#github-status-9-september-2026) skelner mellem installation, lokale tests og publiceringskontrol.
 
 ## Bevisstandard
 
@@ -13,7 +13,8 @@ Målet er, at tekniske fejl forbliver synlige og genforsøges, at originale kild
 | Dækning | Nye/korrigerede kilder bevares; fejlmarkører behandles som manglende analyse | Tests af kildeopdatering, reparation og dokumentbanner |
 | Sikkerhed | Kildestrenge udføres ikke som formler; URL-politik gælder også omdirigeringer | Test af formelinput, PDF-links, HTTPS og omdirigeringer |
 | Kildehistorik | Kun dokumenterede, entydige erstatninger bruges; historiske kildedata bevares | 56 nye tests; live-sammenligning viser 39 R-markeringer og bevarede værdier, formler og noter i A–Q |
-| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | 8.2.0 installeret og fuldt genlæst; 347 aktive mangler kl. 13.10.30. Fem MOTAS-PDF’er er accepteret via countTokens, men den faktiske analyse fik HTTP 429. En ny rigtig tekst med statusrettelserne er fortsat udestående |
+| Kildetekst | Kun kendt 8.000-tegnsafkortning af samme kildeversion udvides | 19 tests; live 12 H-udvidelser og to R-markeringer med alle øvrige celler bevaret |
+| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | 8.2.1 installeret og fuldt genlæst; 341 aktive mangler kl. 13.32.44. Fem MOTAS-PDF’er accepteret via countTokens; den faktiske analyse fik HTTP 429. En ny rigtig tekst er fortsat udestående |
 
 Ingen vægtet modelbedømmelse anvendes: dette er binære korrekthedskrav til kode. Ingen model er valgt som bedre på baggrund af disse tests. Modellerne testes med de samme simulerede API-svar, uden netværk, credentials eller rigtige emails.
 
@@ -27,7 +28,7 @@ npm test
 
 Der kræves ingen pakkeinstallation. Testene indlæser hele Apps Script-filen i en isoleret JavaScript-kontekst med simulerede tjenester og deaktiveret dynamisk kodegenerering. Koden kan ikke tilgå Node-moduler, miljøvariabler eller rigtige Google-konti fra testkonteksten.
 
-**Seneste lokale kørsel: 296/296 bestået** for 8.2.0-leverancen. Heri indgår 56 nye prøver af kildeerstatning; de eksisterende 240 tests er bevaret. Uafhængige reviews af skrive- og læsesiden afsluttedes uden udestående P1/P2-fund efter rettelsen af sammensat R-/referathistorik. `node --test` viser det aktuelle samlede antal; et lokalt resultat er ikke et CI-resultat for en endnu upubliceret commit.
+**Seneste lokale kørsel: 315/315 bestået** for 8.2.1 i det rigtige checkout. De eksisterende 296 tests er bevaret, og 19 nye tests dækker afkortet kildeinput, grænser, genkørsler, afbrydelser og syntetiske analysefelter i testdata. Ni af de nye tests fejler mod 8.2.0. Uafhængigt review fandt ingen P1/P2-fejl og bestod 19 målrettede prøver samt seks yderligere grænsekontroller. Fixture indeholder offentlige kildetekster og syntetiske analyse-/datofelter; private Sheets-analyser er ikke publiceret. Et lokalt resultat er ikke et CI-resultat eller en modelbenchmark.
 
 De 56 nye tests giver 18 fejl mod 8.1.9: 11 viser ændret adfærd, mens syv alene skyldes, at den nye hjælpefunktion ikke findes i baselinen. De resterende 38 består. En særskilt uafhængig reproduktion af blandet R-/referathistorik fejlede i fem læserveje før rettelsen og bestod bagefter. Testene er ikke et bevis for analyse- eller skrivekvalitet fra en rigtig model.
 
@@ -82,6 +83,18 @@ Et kildeindeks, hvis citat ikke kan bekræftes, knyttes ikke længere til den uv
 
 
 ## Driftsstatus 9. september 2026
+
+**Status 9. september 2026 kl. 13.32.44: `8.2.1-validation` er installeret i Apps Script, og 315/315 lokale tests består.** Hele hovedfilen er genlæst og matcher SHA-256 `4709e03b7fc5b018b7431f256fd082d03ee3310f31e05f9f3bd37c14f1515204` efter normalisering af linjeskift. En ny rigtig nyhedsbrevstekst med statusrettelserne kunne endnu ikke produceres og kontrolleres på grund af kvoter og overbelastning.
+
+I 8.2.1 kan en gammel kildetekst på præcis 8.000 tegn udvides til højst 45.000 tegn, når det gemte, ikke-tomme kildefingeraftryk er identisk med den friske fulde kilde, og hele det gamle uddrag er et ordret præfiks. Kun H ændres; kildedato, analyse, fingerprint og kilde-ID bevares. En rigtig kildeændring nulstiller fortsat analysen. Udvidelse tælles særskilt og er hverken ny offentliggørelse eller analysereparation.
+
+Indsamlingen kl. 13.31.14–13.31.53 udvidede 12 kildeuddrag og registrerede to yderligere erstatninger i R. Sammenligningen af hele arket viser præcis 14 ændrede celleværdier og to nye noter; alle øvrige værdier, formler og noter er bevaret. Arket indeholder fortsat 1.185 datarækker. Diagnosen kl. 13.32.44 viser 211 historiske dagsordener, 41 erstatninger via R og 933 aktive poster: 588 analyserede, fire formalia, 297 med tom og 44 med ugyldig analyse. Der er 341 aktive mangler, heraf 107 i nyhedsvinduets 123 poster. Faldet fra 347 til 341 skyldes historik; det kumulative antal faktiske analysereparationer er fortsat 14.
+
+De udvidede rækker er 681, 683, 684, 695, 697, 698, 740, 747, 1054, 1058, 1070 og 1077. Række 989 henviser til 1077, og 1035 til 1070. Alle tidligere 39 R-noter er bevaret. De to nye noter matcher forhåndskontrollen, bortset fra frisk tidspunkt og kataloghash. Et nyt offentligt HTTP 200-svar bekræftede livehashen; katalogindholdet var identisk efter sortering af mødelister efter ID. Kun rækkefølgen af to møder fra 2025 var ændret.
+
+Den aktive 8.1.7-prøvekø var kl. 13.20.43 nået til 25 af 43 PDF-trin: 12 modelvurderinger og 13 udtrykkelige fejl. Køen er ikke afsluttet, og mail er slået fra. De tidligere beskrevne kvote- og kapacitetsbegrænsninger består.
+
+## Dateret driftskontrol af 8.2.0 kl. 13.10
 
 Apps Script kører `8.2.0-validation`. Hele den genlæste hovedfil matcher leverancen efter normalisering af linjeskift: SHA-256 `575af82b18e94948b673e4a66244ffae870b00e3432ca6fafba43387d49bdf07`. 296/296 lokale tests består. To uafhængige reviews afsluttedes uden udestående P1/P2-fund efter rettelsen af sammensat R-/referathistorik.
 
@@ -224,15 +237,8 @@ Skriveprøven kl. 11.19 gav ingen tekst på grund af kvotefejl. Afslutningen af 
 
 ## GitHub-status 9. september 2026
 
-Denne 8.2.0-leverance omfatter kildehistorik i R, 56 nye regressionstests og den opdaterede driftsdokumentation. Den installerede Apps Script-kilde matcher hashværdien i driftsstatus. GitHub-kontrolgrundlaget før denne leverance er:
+**Publicering:** Denne 8.2.1-leverance tilføjer den afgrænsede tekstudvidelse og 19 tests oven på 8.2.0. Senest verificerede CI før leverancen bestod for [8.2.0-commit 2e58d10](https://github.com/Mweimar2000/maja-sf.dk/commit/2e58d103209b501f9e852d6f3cf2a2c62c87bf9d). CI skal kontrolleres for den konkrete nye commit efter publicering på reparationsgrenen; 315 lokale tests er ikke et CI-resultat. `main` stod ved seneste kontrol på 8.1.8/f8596 og afventer udtrykkelig godkendelse efter afvisning fra den automatiske godkendelseskontrol. Et GitHub-merge installerer ikke i sig selv kode i Apps Script.
 
-| Kontrol | Bekræftet commit | Version |
-|---|---|---|
-| `main` ved seneste kontrol | [f8596ade59383c91daedfb62045ce96010dd0fa6](https://github.com/Mweimar2000/maja-sf.dk/commit/f8596ade59383c91daedfb62045ce96010dd0fa6) | 8.1.8 med dokumentation |
-| Senest verificerede CI før leverancen | [4fa36e6](https://github.com/Mweimar2000/maja-sf.dk/commit/4fa36e6f5dd32975c3c0d52fafdaeebdb2a6b241) | 8.1.9; [CI bestået](https://github.com/Mweimar2000/maja-sf.dk/actions/runs/34340682451) |
-
-8.2.0-leverancen har bestået 296/296 lokale tests og er til reparationsgrenen `codex/fix-newsletter-validation`. CI skal kontrolleres for den konkrete commit efter publicering; det lokale resultat er ikke et bevis for en bestået 8.2.0-CI-kørsel. **Opdatering af `main` afventer udtrykkelig godkendelse efter afvisning fra den automatiske godkendelseskontrol.** Installation i Apps Script og publicering på GitHub er særskilte handlinger.
-
-[GitHub Actions](https://github.com/Mweimar2000/maja-sf.dk/actions/workflows/robot-tests.yml) viser CI-resultater for den konkrete publicerede commit; et tidligere grønt resultat gælder ikke automatisk 8.2.0 eller en senere dokumentationscommit. Den tidligere 8.1.9-leverance indeholdt PDF-rettelsen, 23 regressionstests og den daværende driftsdokumentation. Beviserne for 8.1.8 nedenfor er historiske.
+[8.2.0-CI bestod](https://github.com/Mweimar2000/maja-sf.dk/actions/runs/34345453720) på reparationsgrenen, og alle fem publicerede filer blev bytekontrolleret mod det lokale checkout. Denne kørsel gælder 8.2.0. Se [GitHub Actions](https://github.com/Mweimar2000/maja-sf.dk/actions/workflows/robot-tests.yml) for den konkrete senere commits resultat.
 
 **Historik for 8.1.8:** Koden blev installeret og flettet på main, og de angivne GitHub Actions-kørsler bestod. Den [testede leverance](https://github.com/Mweimar2000/maja-sf.dk/commit/67771cddf083b3b6ee3afb3bcba7d0a60f13ac18) blev flettet med en [normal mergecommit](https://github.com/Mweimar2000/maja-sf.dk/commit/db0499f07b51b2c43ad6293275b14c27a1c59139), der bevarer begge forældres historik. Begge forældre og hele træet er genlæst og verificeret. Ingen øvrige main-filer gik tabt. Opdateringen brugte ikke force-push. GitHub Actions består på både [reparationsgrenen](https://github.com/Mweimar2000/maja-sf.dk/actions/runs/34335756175) og [mergecommitten på main](https://github.com/Mweimar2000/maja-sf.dk/actions/runs/34335989826). Livefilen i Apps Script er genlæst i sin helhed efter fjernelse af den midlertidige skriveprøve og matcher SHA-256 `00227f9452351649d2337a86a4ed212347e6e5b8413255f10a98eeb5e5edd36f`. Stilguiden er med i samme leverance. Repositoryets Pull requests-funktion var slået fra ved kontrollen, og PR #5 gav derfor 404; publiceringen ændrede ikke denne indstilling. Den bekræftede kodepublicering og installation gør ikke den blokerede rigtige skriveprøve til et bestået resultat; begrænsningerne ovenfor gælder fortsat.
