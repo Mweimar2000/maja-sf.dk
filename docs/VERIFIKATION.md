@@ -10,7 +10,7 @@ Målet er, at tekniske fejl forbliver synlige og genforsøges, at originale kild
 | Kildebelæg | Optælling beregnes i kode; understøttede/modsagte påstande kræver genfindeligt citat | Test af forkert optælling, opdigtede citater, manglende/afkortede kilder |
 | Dækning | Nye/korrigerede kilder bevares; fejlmarkører behandles som manglende analyse | Tests af kildeopdatering, reparation og dokumentbanner |
 | Sikkerhed | Kildestrenge udføres ikke som formler; URL-politik gælder også omdirigeringer | Test af formelinput, PDF-links, HTTPS og omdirigeringer |
-| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | 8.1.6 installeret og fuldt genlæst; kvotestop og nye driftstider kontrolleret. Den eksisterende 42-bilagskø fortsætter |
+| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | 8.1.7 installeret og fuldt genlæst; kvotestop, driftstider og automatisk indsamling kontrolleret. Den eksisterende 42-bilagskø fortsætter |
 
 Ingen vægtet modelbedømmelse anvendes: dette er binære korrekthedskrav til kode. Ingen model er valgt som bedre på baggrund af disse tests. Modellerne testes med de samme simulerede API-svar, uden netværk, credentials eller rigtige emails.
 
@@ -24,7 +24,7 @@ npm test
 
 Der kræves ingen pakkeinstallation. Testene indlæser hele Apps Script-filen i en isoleret JavaScript-kontekst med simulerede tjenester og deaktiveret dynamisk kodegenerering. Koden kan ikke tilgå Node-moduler, miljøvariabler eller rigtige Google-konti fra testkonteksten.
 
-Den første pakke på 20 kontroller gav 18 fejl mod Claude-versionen `df0b6394ab853e3864dec132913c07224fd9de75`, og alle 20 bestod efter rettelse. Flere tests er siden tilføjet for indsamling og genforsøg. **Seneste lokale kørsel: 190/190 bestået** (Node 24.19.0). `node --test` viser det aktuelle samlede antal.
+Den første pakke på 20 kontroller gav 18 fejl mod Claude-versionen `df0b6394ab853e3864dec132913c07224fd9de75`, og alle 20 bestod efter rettelse. Flere tests er siden tilføjet for indsamling og genforsøg. **Seneste lokale kørsel: 192/192 bestået** (Node 24.19.0). `node --test` viser det aktuelle samlede antal.
 
 Den separate integrationstest blev skrevet af en subagent og gennemgået ved integration. En uafhængig gennemgang af alle 11 ændrede filer blev gennemført 8. september 2026. Den fandt to fejl: analysen var planlagt efter lørdagskladden, og historiske emails fik indlæsningsdato som nyhedsdato. Tre nye integrationstests reproducerede fejlene før rettelse. Fra `8.1.2-validation` definerer opsætningen indsamling og analyse før kladden (de eksisterende triggere skal genoprettes), og mails beholder deres faktiske modtagelsesdato i A. En mail, der var højst syv dage gammel ved første indlæsning i P, kan bæres frem til den følgende kladde. Arkivmails bliver ikke aktuelle alene ved import eller reparation, heller ikke med en nyere dato i P. En fjerde regressionstest dækker lørdagsmail efter indsamlingen: den kommer med ugen efter uden at blive gentaget endnu en uge senere. Sene FirstAgenda-offentliggørelser bruger fortsat deres særskilte kildedato.
 
@@ -75,7 +75,7 @@ Et kildeindeks, hvis citat ikke kan bekræftes, knyttes ikke længere til den uv
 
 ## Driftsstatus 9. september 2026
 
-- Apps Script kører `8.1.6-validation`, identisk med kodeleverancen i commit `a048c3a` efter normalisering af linjeskift. SHA-256 for hele hovedfilen er `1768347342dcbabb830b6795ff6bd6eb1341a568adf2ba780d011a25ecbb32c1`. Hele regnearket, hovedfilen, to hjælpefiler og manifestet er sikkerhedskopieret. Den private faktatjekmappe er kontrolleret som kun tilgængelig for ejeren. Den oprindelige skjulte manifestvisning er gendannet og verificeret efter genindlæsning.
+- Apps Script kører `8.1.7-validation`, identisk med kodeleverancen i commit `9b1fe812` efter normalisering af linjeskift. SHA-256 for hele hovedfilen er `b7c389315ed77b4b0765926c6d71fc37c006680ecdb039bd07273d82d983fb63`. Hele regnearket, hovedfilen, to hjælpefiler og manifestet er sikkerhedskopieret. Den private faktatjekmappe er kontrolleret som kun tilgængelig for ejeren. Den oprindelige skjulte manifestvisning er gendannet og verificeret efter genindlæsning.
 - Indsamlingen gemte 109 nye/ændrede punkter. De første reparationskørsler gennemførte i alt 8 analyser. En ekstra kørsel 9. september kl. 08.17–08.19 gennemførte rækken om klassetildeling på Gelsted Skole; i alt 9 analyser er repareret. XLSX-sammenligningen før/efter den sidste kørsel viser kun ændringer i J-O på række 1182 (tom score til 4). 851 kildelinks blev rettet i kolonne G; kontrollen fandt ingen andre celleændringer fra selve linkreparationen.
 - Arket har 1.185 datarækker. 147 historiske dagsordensrækker er erstattet af entydigt matchede referater i udvælgelsen og bevaret i arket. Det udelukker 68 historiske manglende analyser; det er ikke 68 reparationer. Der er efter den sidste reparation fortsat 437 aktive rækker uden gyldig analyse. 8.1.5-prøvekladden blev dannet før denne reparation og viser 114 manglende af 124 rækker i sin periode.
 - 8.1.4 bestod modelprøven via Gemini 3.5 efter HTTP 429 på 3.7 og 3.6. Kladden beskrev spildevandssagens videre behandling korrekt, men faktatjekket med alle PDFer blev afbrudt efter seks minutter. Den uverificerede kladde og kildehenvisninger blev bevaret.
@@ -126,6 +126,11 @@ En uafhængig lokal reproduktion viste, at planlagte basiskørsler mistedes, hvi
 
 Manuelle prøver uden event bliver ikke genstartet, og et mailfravalg tabes derfor ikke til en senere timer. Allerede påbegyndt arbejde gentages ikke efter exception eller hård afbrydelse. Hvis Google nægter både triggeroprettelse og registrering, kan et allerede forbrugt event ikke garanteres genoprettet; fejlen kastes synligt. Flere trigger-ejere koordineres ikke af denne løsning.
 
-De 190 lokale tests omfatter 26 nye timerprøver og 12 statusprøver. Fem af de første otte statusprøver fejlede mod den faktiske 8.1.6-backup; de andre tre beskyttede gyldige formuleringer. Review fandt tre tilfælde af for streng kontrol (anden kilde/nyere tekst, forbehold og historisk vedtagelse), som blev rettet og dækket af yderligere prøver. Den samlede 8.1.7-leverance er under afsluttende review og endnu ikke installeret eller semantisk afprøvet med et nyt modelsvar.
+De 190 lokale tests omfatter 26 nye timerprøver og 12 statusprøver. Fem af de første otte statusprøver fejlede mod den faktiske 8.1.6-backup; de andre tre beskyttede gyldige formuleringer. Review fandt tre tilfælde af for streng kontrol (anden kilde/nyere tekst, forbehold og historisk vedtagelse), som blev rettet og dækket af yderligere prøver. Den samlede 8.1.7-kode bestod uafhængigt review uden udestående P1/P2-fund og er installeret kl. 10.02. Den er genlæst i sin helhed. En ny skriveprøve med et rigtigt modelsvar er fortsat udestående.
 
 Den friske XLSX-eksport kl. 09.19 indeholder præcis de samme celler, formler og cachede værdier som før 8.1.6-installationen: 0 ændrede celler, 1.185 datarækker og 437 aktive mangler. Af dem ligger 113 i det aktuelle nyhedsvindue. Samtlige ZIP-delindhold er byteidentiske; forskellig XLSX-hash skyldes containerens metadata.
+
+
+To supplerende integrationstests bringer totalen til 192. De gennemfører den rigtige kladde-/job-/rapportstyring med simulerede tjenester gennem nye eksekveringer: en tidsstyret retry giver præcis én kladde og én notifikation trods forsinkede dubletter; en manuel prøve uden mail annullerer sit gamle genforsøg og forbliver uden mail gennem alle workers. De supplerer de fokuserede låsetests med hele forløbet. Ingen rigtige emails sendes af testene.
+
+Den planlagte `dailyIngest` kørte automatisk den 9. september kl. 09.52.29–09.53.59 under 8.1.6, før 8.1.7-installationen. Loggen viser begge indsamlingstrin og 0 nye/ændrede FirstAgenda-kildepunkter. Det er et konkret bevis for den ændrede daglige tidsplan, men ikke en fremprovokeret driftsprøve af det nye genforsøg ved låseafslag.

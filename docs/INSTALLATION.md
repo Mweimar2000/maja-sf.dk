@@ -2,7 +2,7 @@
 
 Denne ændring er ikke automatisk installeret i Apps Script. Et merge på GitHub opdaterer ikke robotten; kun stilguiden hentes automatisk derfra.
 
-Den installerede version er fortsat `8.1.6-validation` (kode fra commit `a048c3a`). Leverancen her er `8.1.7-validation` og skal genlæses efter installation. De tre driftstriggere er gemt og kontrolleret til kl. 9–10, 11–12 og lørdag 13–14. Den eksisterende faktatjekkø fortsætter; slutrapporten og en ny kladde med den ændrede kildepolitik er stadig under driftskontrol. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
+Version `8.1.7-validation` er installeret og genlæst i sin helhed, identisk med kodeleverancen fra commit `9b1fe812`. SHA-256: `b7c389315ed77b4b0765926c6d71fc37c006680ecdb039bd07273d82d983fb63`. De tre driftstriggere er gemt og kontrolleret til kl. 9–10, 11–12 og lørdag 13–14. Den eksisterende faktatjekkø fortsætter; slutrapporten og en ny kladde med den ændrede kildepolitik er stadig under driftskontrol. Se den daterede [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) før genoptagelse, så allerede gennemført indsamling ikke gentages uden grund.
 
 ## Før installation
 

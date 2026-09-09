@@ -69,7 +69,7 @@ function harness(t, rows = []) {
     meetings: [], agendas: new Map(), threads: [], labelExists: true,
     writes: [], propertyWrites: [], pages: [], fetches: [], modelCalls: [],
     replies: [], documents: [], documentWrites: [], mails: [], logs: [], unexpected: [], lockEvents: [], triggers: [],
-    schedulerOwner: null, userProperties: new Map(),
+    schedulerOwner: null, userProperties: new Map(), nextTriggerId: 1,
     owner: null, beforeWrite: null, afterWrite: null, beforeModel: null, beforeFetch: null,
     files: new Map(), folders: new Map(), fileWrites: [], executions: [], pdfs: new Map(),
     terminateExecution: false, beforeMail: null, beforeFileWrite: null,
@@ -226,8 +226,9 @@ function harness(t, rows = []) {
     h.now += trigger.delay;
     return h.run('processPendingFactCheck');
   };
-  h.run = entry => {
-    assert.ok(PUBLIC_ENTRIES.has(entry), 'Tests invoke public entry points only');
+  h.run = (entry, event) => {
+    assert.ok(PUBLIC_ENTRIES.has(entry) || ['retryDailyIngest', 'retryDailyRepairAnalyses', 'retryWeeklyDraft'].includes(entry),
+      'Tests invoke public entry points only');
     h.executions.push({ entry });
     // Each invocation models a new Apps Script execution: its time budget and
     // in-process caches reset; Sheets, Gmail, locks and properties persist.
@@ -300,7 +301,8 @@ function harness(t, rows = []) {
           h.triggerEvents.push({ action: 'delete', handler: trigger.handler, remaining: h.workerTriggers().length });
         },
         newTrigger(handler) {
-          const trigger = { handler, getHandlerFunction() { return this.handler; } };
+          const trigger = { handler, id: 'fixture-trigger-' + h.nextTriggerId++,
+            getHandlerFunction() { return this.handler; }, getUniqueId() { return this.id; } };
           const builder = {
             timeBased() { return this; },
             after(delay) { trigger.delay = delay; return this; },
@@ -453,7 +455,8 @@ function harness(t, rows = []) {
     }`, context, { timeout: 1000 });
     vm.runInContext(SOURCE, context, { timeout: 1000 });
     try {
-      return vm.runInContext(`${entry}()`, context, { timeout: 500 });
+      context.__entryEvent = structuredClone(event);
+      return vm.runInContext(`${entry}(__entryEvent)`, context, { timeout: 500 });
     } catch (error) {
       if (error.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
         h.owner = null; // Apps Script releases execution-owned locks on termination.
@@ -2220,4 +2223,85 @@ test('a crash after report creation but before its ID checkpoint leaves the orph
   assert.deepEqual(h.documents[0], original);
   assert.match(h.report().text, /Verificeret: 1/);
   assert.equal(h.mails.length, 0);
+});
+
+
+// Unlike the focused scheduler tests, these execute the actual writer, Drive
+// checkpoints, separate report and notification pipeline in fresh worker VMs.
+test('scheduled weekly retry completes the real fact-check workflow once despite duplicate timer delivery', t => {
+  const valid = item(), h = harness(t, [sourceRow(valid)]);
+  h.agendas.set('council', [valid]);
+  h.replies.push(DRAFT, CHECK);
+  h.run('setupOnce_createTriggers');
+  const baseTriggers = h.triggers.slice();
+  const weekly = baseTriggers.find(trigger => trigger.handler === 'generateWeeklyDraft');
+  const owner = Symbol('busy fact worker'); h.owner = owner;
+  h.run('generateWeeklyDraft', { triggerUid: weekly.getUniqueId() });
+  const retry = h.triggers.find(trigger => trigger.handler === 'retryWeeklyDraft');
+  assert.ok(retry); assert.equal(retry.delay, 420000);
+  assert.equal(h.owner, owner);
+  assert.equal(h.documents.length + h.fetches.length + h.mails.length, 0);
+  const event = { triggerUid: retry.getUniqueId() };
+  h.triggers.splice(h.triggers.indexOf(retry), 1); h.now += retry.delay; h.owner = null;
+  h.run('retryWeeklyDraft', event);
+  assert.equal(h.documents.length, 1, 'Retry creates one initial draft before asynchronous fact checking');
+  assert.equal(h.modelCalls.length, 1);
+  assert.equal(h.pendingJob().options.sendNotification, true);
+  assert.equal(h.userProperties.has('BASE_RETRY_retryWeeklyDraft'), false);
+  assert.equal(h.mails.length, 0);
+  const original = structuredClone(h.documents[0]);
+  const queued = h.pendingJob(), writes = h.fileWrites.length;
+  h.run('retryWeeklyDraft', event);
+  assert.deepEqual(h.pendingJob(), queued);
+  assert.equal(h.fileWrites.length, writes);
+  assert.equal(h.documents.length, 1); assert.equal(h.modelCalls.length, 1);
+  h.drain();
+  const report = structuredClone(h.report());
+  assert.match(report.text, /Verificeret: 1/);
+  assert.equal(h.latestJob().reportPublication, 'published');
+  assert.equal(h.documents.length, 2); assert.equal(h.modelCalls.length, 2);
+  assert.equal(h.mails.length, 1);
+  assert.ok(h.mails[0][2].includes(h.latestJob().reportDocUrl));
+  h.run('retryWeeklyDraft', event);
+  assert.equal(h.pendingJob(), null);
+  assert.equal(h.documents.length, 2); assert.equal(h.modelCalls.length, 2);
+  assert.equal(h.mails.length, 1, 'A delayed duplicate cannot start another draft or notification');
+  assert.deepEqual(h.documents[0], original); assert.deepEqual(h.report(), report);
+  assert.deepEqual(h.triggers, baseTriggers);
+});
+
+test('manual no-email draft cancels a pending timed retry and stays mail-free through real workers and stale events', t => {
+  const valid = item(), h = harness(t, [sourceRow(valid)]);
+  h.agendas.set('council', [valid]); h.replies.push(DRAFT, CHECK);
+  h.run('setupOnce_createTriggers');
+  const baseTriggers = h.triggers.slice();
+  const weekly = baseTriggers.find(trigger => trigger.handler === 'generateWeeklyDraft');
+  const owner = Symbol('busy fact worker'); h.owner = owner;
+  h.run('generateWeeklyDraft', { triggerUid: weekly.getUniqueId() });
+  const retry = h.triggers.find(trigger => trigger.handler === 'retryWeeklyDraft');
+  const pendingTriggers = h.triggers.slice(), pendingUserProperties = new Map(h.userProperties);
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.owner, owner);
+  assert.deepEqual(h.triggers, pendingTriggers); assert.deepEqual(h.userProperties, pendingUserProperties);
+  assert.equal(h.documents.length + h.fetches.length + h.mails.length, 0);
+  h.owner = null;
+  h.run('testGenerateNewsletterWithoutEmail');
+  assert.equal(h.documents.length, 1); assert.equal(h.modelCalls.length, 1);
+  assert.deepEqual(h.pendingJob().options, { sendNotification: false });
+  assert.ok(!h.triggers.includes(retry));
+  assert.equal(h.userProperties.has('BASE_RETRY_retryWeeklyDraft'), false);
+  const original = structuredClone(h.documents[0]), queued = h.pendingJob();
+  const stale = { triggerUid: retry.getUniqueId() };
+  h.run('retryWeeklyDraft', stale);
+  assert.deepEqual(h.pendingJob(), queued, 'The stale default-email retry cannot replace no-email job options');
+  assert.equal(h.modelCalls.length, 1);
+  h.drain();
+  assert.equal(h.documents.length, 2); assert.match(h.report().text, /Verificeret: 1/);
+  assert.deepEqual(h.documents[0], original);
+  assert.equal(h.latestJob().options.sendNotification, false);
+  assert.equal(h.mails.length, 0);
+  h.run('retryWeeklyDraft', stale);
+  assert.equal(h.pendingJob(), null); assert.equal(h.documents.length, 2);
+  assert.equal(h.modelCalls.length, 2); assert.equal(h.mails.length, 0);
+  assert.deepEqual(h.triggers, baseTriggers);
 });
