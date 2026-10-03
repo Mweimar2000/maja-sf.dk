@@ -74,10 +74,13 @@ function harness(t) {
   h.sheet = { getLastRow: () => h.rows.length, getMaxColumns: () => h.columns, getRange: range,
     getDataRange: () => range(1, 1, h.rows.length, h.columns), insertColumnsAfter(after, count) { assert.ok(h.locked); assert.equal(after, h.columns); h.columns += count; } };
   const props = { getProperty: key => h.props.get(key) ?? null, setProperty: (key, value) => h.props.set(key, String(value)), deleteProperty: key => h.props.delete(key) };
+  const userValues = new Map();
+  const userProps = { getProperty: key => userValues.get(key) ?? null,
+    setProperty: (key, value) => userValues.set(key, String(value)), deleteProperty: key => userValues.delete(key) };
   const unexpected = message => { h.unexpected.push(message); throw new Error(message); };
   const context = vm.createContext({ Date: Clock, console: { log: (...args) => h.logs.push(args.join(' ')) },
     Session: { getScriptTimeZone: () => 'Europe/Copenhagen', getEffectiveUser: () => ({ getEmail: () => 'fake@example.invalid' }) },
-    PropertiesService: { getScriptProperties: () => props },
+    PropertiesService: { getScriptProperties: () => props, getUserProperties: () => userProps },
     SpreadsheetApp: { openById: () => ({ getSheetByName: () => h.sheet }) },
     LockService: { getScriptLock: () => ({ tryLock() { if (h.locked) return false; h.locked = true; return true; }, releaseLock() { h.locked = false; } }) },
     Utilities: { DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, sleep: () => {},

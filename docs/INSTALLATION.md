@@ -1,10 +1,22 @@
 # Installation og driftskontrol
 
-**Status 9. september 2026 kl. 13.32.44: `8.2.1-validation` er installeret i Apps Script, og 315/315 lokale tests består.** Hele hovedfilen er genlæst og matcher SHA-256 `4709e03b7fc5b018b7431f256fd082d03ee3310f31e05f9f3bd37c14f1515204` efter normalisering af linjeskift. En ny rigtig nyhedsbrevstekst med statusrettelserne kunne endnu ikke produceres og kontrolleres på grund af kvoter og overbelastning. Et merge på GitHub deployer ikke koden til Apps Script; kun stilguiden hentes automatisk fra GitHub. Se [driftsstatus](VERIFIKATION.md#driftsstatus-9-september-2026) og [publiceringsstatus](VERIFIKATION.md#github-status-9-september-2026).
+## Opdatering til 8.2.2
 
-Indsamlingen kl. 13.31.14–13.31.53 udvidede 12 kildeuddrag og registrerede to yderligere erstatninger i R. Sammenligningen af hele arket viser præcis 14 ændrede celleværdier og to nye noter; alle øvrige værdier, formler og noter er bevaret. Arket indeholder fortsat 1.185 datarækker. Diagnosen kl. 13.32.44 viser 211 historiske dagsordener, 41 erstatninger via R og 933 aktive poster: 588 analyserede, fire formalia, 297 med tom og 44 med ugyldig analyse. Der er 341 aktive mangler, heraf 107 i nyhedsvinduets 123 poster. Faldet fra 347 til 341 skyldes historik; det kumulative antal faktiske analysereparationer er fortsat 14. Produktionsmodellerne og de tre allerede kontrollerede driftstriggere er uændrede. Den aktuelle installation er gennemført; gentag ikke førstegangsopsætningen.
+8.2.2 retter kildestatuskontrollens sammenblanding af organ- og sagsnavne, giver reservemodellen konkret rettelsesfeedback og tilføjer begrænsede genforsøg ved midlertidige API-fejl i den planlagte skrivning. Koden skal indlæses i det eksisterende Apps Script-projekt; GitHub Actions tester kun filerne. Installation og en rigtig skriveprøve med 8.2.2 er endnu ikke verificeret.
 
-Trinene nedenfor er en generel vejledning til førstegangsinstallation og senere opdateringer. De skal ikke gentages samlet for den allerede installerede version; brug den daterede driftsstatus til at se, hvad der allerede er gennemført.
+1. Gem en kopi af de nuværende kodefiler og manifestet. Sammenlign den kørende version med leverancen, så nyere lokale ændringer ikke overskrives.
+2. Erstat indholdet af den eksisterende hovedfil med `sf-middelfart-robot-v8.gs`. Bevar øvrige filer, Script Properties, regneark og eksisterende triggere. Der skal ikke oprettes en ekstra fil med de samme funktioner, og triggeropsætningen skal ikke køres igen alene for denne kodeopdatering.
+3. Kontrollér `ROBOT_VERSION = "8.2.2-validation"`, og kør `debugTestGemini()`. Det koster et modelkald, men sender ingen mail. Ved fejl: læs HTTP-status i **Udførelser**, før gentagne manuelle forsøg.
+4. Kør `debugDiagnoseSheet()`. Mangler aktuelle analyser, kør `dailyRepairAnalyses()` og sammenlign diagnosen bagefter. Gentag kun mens arbejdet skrider frem og modelkapaciteten tillader det.
+5. Kør `testGenerateNewsletterWithoutEmail()`. Kontrollér kladden og den separate faktatjekrapport; `debugFactCheckJob()` viser køens fremdrift. Mailfravalget følger hele testforløbet.
+
+Automatiske genforsøg kan først hjælpe kørsler, der starter med den nye kode. Et allerede fejlet lørdagsbrev skal derfor startes manuelt efter opdateringen. En manuel test bruger de seneste syv dage på testtidspunktet.
+
+Hvis loggen siger »Kladde beskriver en gennemført beslutning eller handling uden belæg«, er teksten afvist af den lokale kildestatuskontrol. Det er ikke i sig selv en API- eller kvotefejl. Opdatér koden og kontrollér en ny mailfri kladde mod originalkilderne. Version 8.2.2 bevarer afvisningen af reelle overdrivelser, men retter den dokumenterede forveksling af forskellige sager fra samme organ.
+
+Ved HTTP 429 skal kapaciteten for projektet bag `GEMINI_API_KEY` kontrolleres i Google AI Studio. Flere hurtige genforsøg øger ikke kvoten. HTTP 503 angiver midlertidig utilgængelighed. HTTP 400/401/403 skal undersøges som forespørgsels-/adgangsfejl. API-nøglen skal blive i Script Properties.
+
+Den daterede [historik fra 9. september](VERIFIKATION.md#driftsstatus-9-september-2026) beskriver den tidligere 8.2.1-installation. Den er ikke bevis for en ny installation eller dagens kvoter. Den generelle procedure nedenfor gælder ved førstegangsinstallation og større opdateringer.
 
 ## Før installation
 
@@ -15,13 +27,13 @@ Trinene nedenfor er en generel vejledning til førstegangsinstallation og senere
 ## Indlæs og kontrollér
 
 1. Indlæs den opdaterede `sf-middelfart-robot-v8.gs` i den eksisterende kodefil. Undgå at oprette endnu en fil med de samme globale funktioner og konstanter. Bevar projektets manifest og Script Properties.
-2. Kontrollér `ROBOT_VERSION = "8.2.1-validation"` og hele kildefilens hash mod leverancen.
+2. Kontrollér `ROBOT_VERSION = "8.2.2-validation"` og hele kildefilens hash mod leverancen.
 3. Kør `debugTestGemini()` og notér resultatet. Indsamling og arkdiagnose kan kontrolleres uafhængigt af modelkapaciteten; godkendelse af analyse og nyhedsbrev kræver et gyldigt modelsvar.
 4. Kør `debugDiagnoseSheet()` og notér antal sager uden gyldig analyse.
 5. Kør `testManualRun()` for indsamling. Den gemmer kilder; efteranalysen har sit eget tidsbudget.
 6. Kør `dailyRepairAnalyses()`, derefter `debugDiagnoseSheet()`. Gentag, mens antallet falder og modelkapacitet er tilgængelig. Ved gentagne kvotefejl springes den pågældende model over resten af eksekveringen; hvis alle modeller er ramt, stopper kørslen uden at ændre de resterende rækker. Næste eksekvering prøver modellerne igen. Fejlede sager får en genforsøgspause på mindst 15 minutter, så én fejl ikke blokerer resten.
 7. Kør `testGenerateNewsletterWithoutEmail()` for en kladde uden notifikationsmail. Funktionen gemmer dokumentet og opretter en faktatjekkø; den samlede kontrol er ikke afsluttet, når denne første kørsel slutter. `processPendingFactCheck()` fortsætter automatisk via en engangstrigger. Brug `debugFactCheckJob()` til status. Kontrollér til sidst dækning, kildecitater, PDF-vurderinger og fejl i den separate faktatjekrapport. Rapporten ligger i den private mappe `SF Robotdata (privat)`; dens link vises i afslutningsloggen og i notifikationer, hvis de er aktiveret. Notifikation er slået fra i hele testkøen.
-8. Ved førstegangsinstallation eller nødvendig opdatering af triggeropsætningen: kør efter driftskontrollen `setupOnce_createTriggers()` én gang for at opdatere de tre robottriggere, også hvis deres navne allerede findes. **I den aktuelle installation blev opsætningen allerede gennemført 9. september 2026 kl. 09.06, og triggere er kontrolleret. Kør ikke opsætningen igen nu.** Indsamling ligger kl. 09-10, analyse kl. 11-12 og lørdagskladden kl. 13-14 i projektets tidszone. Afstanden tager højde for Googles valg af minut inden for timen og kørslens varighed. Den tidligere analyse kl. 14 lå efter kladden. Funktionen erstatter kun `dailyIngest`, `dailyRepairAnalyses` og `generateWeeklyDraft`; øvrige projekttriggere bevares, herunder en eventuel igangværende `processPendingFactCheck`-fortsættelse.
+8. Ved førstegangsinstallation eller nødvendig opdatering af triggeropsætningen: kør efter driftskontrollen `setupOnce_createTriggers()` én gang for at opdatere de tre robottriggere, også hvis deres navne allerede findes. **Opsætningen blev senest dokumenteret 9. september 2026 kl. 09.06. Kontrollér eksisterende triggere før en eventuel genopsætning.** Indsamling ligger kl. 09-10, analyse kl. 11-12 og lørdagskladden kl. 13-14 i projektets tidszone. Afstanden tager højde for Googles valg af minut inden for timen og kørslens varighed. Den tidligere analyse kl. 14 lå efter kladden. Funktionen erstatter kun `dailyIngest`, `dailyRepairAnalyses` og `generateWeeklyDraft`; øvrige projekttriggere bevares, herunder en eventuel igangværende `processPendingFactCheck`-fortsættelse.
 
 ## Gamle afkortede kildetekster
 
@@ -51,7 +63,7 @@ De eksisterende properties bruges fortsat: `SPREADSHEET_ID`, `INBOX_SHEET_NAME`,
 
 For emails bevarer A den faktiske modtagelsesdato, mens P registrerer første indlæsning. Kun mails, der var højst syv dage gamle ved indlæsningen, kan bæres til næste kladde efter en weekendgrænse; ældre arkivmails bliver ikke til aktuelle nyheder.
 
-`BASE_RETRY_retryDailyIngest`, `BASE_RETRY_retryDailyRepairAnalyses` og `BASE_RETRY_retryWeeklyDraft` i UserProperties gemmer kun UID for den enkelte trigger-ejers gyldige genforsøg. De tre retryhandlers reagerer kun på det gemte timer-event. Manuel test uden mail skaber ingen baggrundskørsel, når låsen er optaget. Genforsøg gælder låseafslag; et allerede påbegyndt arbejde gentages ikke automatisk efter en exception.
+`BASE_RETRY_retryDailyIngest`, `BASE_RETRY_retryDailyRepairAnalyses` og `BASE_RETRY_retryWeeklyDraft` i UserProperties gemmer kun UID for den enkelte trigger-ejers gyldige genforsøg. De tre retryhandlers reagerer kun på det gemte timer-event. Manuel test uden mail skaber ingen baggrundskørsel, når låsen er optaget. Disse genforsøg gælder låseafslag. Siden 8.2.2 kan `retryWeeklyDraft` desuden genoptage en planlagt skrivning efter en klassificeret midlertidig Gemini-fejl, før noget dokument er oprettet. UserProperty `WEEKLY_GENERATION_RETRY` gemmer ugeperiode, forsøgsgrænse og afsluttet status hos trigger-ejeren uden kildeindhold eller credentials. Midlertidige fejl genforsøges tidligst efter én time, kvotefejl efter 23 timer, højst tre skrivekørsler inden for 48 timer. En afsluttet tilstand afviser forsinkede dubletter af samme basistimer; næste uge får et nyt budget. En manuel kørsel overtager og annullerer det ventende skrivegenforsøg, når den får robotlåsen. Øvrige exceptions genstarter ikke allerede påbegyndt arbejde.
 
 `FA_SCAN_NEXT_ID`, `GMAIL_SCAN_OFFSET` og `ANALYSIS_RETRY_*` styres af robotten. De muliggør genoptagelse og pauser mellem genforsøg. Der gemmes ingen API-nøgler eller PDF-indhold i disse nye properties.
 

@@ -2,7 +2,25 @@
 
 Målet er, at tekniske fejl forbliver synlige og genforsøges, at originale kilder følger med analysen, og at faktatjek aldrig præsenterer et tomt eller ugyldigt modelsvar som en verificeret kladde.
 
-**Status 9. september 2026 kl. 13.32.44: `8.2.1-validation` er installeret i Apps Script, og 315/315 lokale tests består.** Hele hovedfilen er genlæst og matcher SHA-256 `4709e03b7fc5b018b7431f256fd082d03ee3310f31e05f9f3bd37c14f1515204` efter normalisering af linjeskift. En ny rigtig nyhedsbrevstekst med statusrettelserne kunne endnu ikke produceres og kontrolleres på grund af kvoter og overbelastning. Der er 341 aktive mangler og fortsat 14 dokumenterede analysereparationer. [Driftsstatus](#driftsstatus-9-september-2026) og [GitHub-status](#github-status-9-september-2026) skelner mellem installation, lokale tests og publiceringskontrol.
+## Rettelsen i 8.2.2
+
+Den konkrete fejlmelding var en lokal kildestatusafvisning: skriveren havde produceret en tekst, som kontrollen forbandt med en udokumenteret gennemført handling. Den generiske fejlmail kaldte det fejlagtigt blot et fejlet Gemini-kald.
+
+En reproducerbar fejl i kontrollen er rettet: et organ som »Byrådet« i titlen på et forslag kunne binde en korrekt beslutning om en anden sag til forslaget. Emnebindingen udelukker nu organets navn og generelle procesord. Egentlige sagsord og de eksisterende kontroller af udokumenterede beslutninger bevares. Den afviste produktionskladde blev ikke gemt, så den præcise sætning fra fejlkørslen kan ikke efterprøves; en reel overdrivelse og denne falske alarm kan ikke skelnes ud fra fejlbeskeden alene.
+
+Ved en indholdsafvisning får den eksisterende reservemodel nu den konkrete kontrolbesked som citerede data sammen med de oprindelige kilder. Der tilføjes ingen ekstra modelkald til fallbackkæden, og hver erstatning skal bestå samme validator. Hvis alle svar fortsat afvises, gemmes ingen kladde. Fejlmailen angiver nu indholdsafvisning, HTTP-status eller anden fejltype samt robotversionen.
+
+En særskilt driftsrettelse håndterer midlertidige API-/netværksfejl før dokumentoprettelse. Planlagte skrivekørsler får højst tre forsøg inden for 48 timer med samme ugeperiode, mens kalenderen bruger faktisk kørselsdato. Ugyldigt indhold, adgangsfejl og fejl efter dokumentoprettelse starter ikke en sådan baggrundskørsel. Manuel test uden mail bevarer mailfravalget.
+
+De tre tidligere rettelser fra 8.1.9–8.2.1 indgår også i leverancen: store PDF-input, bevaret erstatningshistorik og sikker udvidelse af kendt afkortet kildetekst. Baseline 8.2.1 er genafprøvet lokalt med 315 beståede tests.
+
+**Driftsgrænse:** Installation af 8.2.2 og en rigtig skriveprøve er endnu ikke verificeret. GitHub-opdateringen udfører ingen Apps Script-installation. Der er ikke ændret API-nøgle, betalingsopsætning, modelvalg eller eksisterende driftstriggere som del af denne rettelse. Testene bruger simulerede tjenester og beviser kodeadfærd, ikke en rigtig models skrivekvalitet. En hård Apps Script-afbrydelse midt i et netværkskald kan stadig forhindre planlægning af et genforsøg.
+
+## Testresultat for 8.2.2
+
+`npm test` består **345/345 tests** med Node 24.19.0. JavaScript-syntaks og `git diff --check` består. Hovedfilens SHA-256 er `b9890d3c8d90d94fcbc47dff1d789911630c582ae456d27f13294289b801d336`. Det er et lokalt testresultat; installation i Apps Script er fortsat ikke verificeret.
+
+De 30 nye tests omfatter fem for emneadskillelse, seks for rettelsesfeedback/fejlmail og 19 for planlagte skrivegenforsøg. Fejlene blev reproduceret før rettelserne: to falske emnematch, manglende feedback/fejlklassifikation og manglende senere forsøg efter midlertidige API-fejl. Tests beskytter også fortsat afvisning af reelle statusoverdrivelser, ingen gemning af afvist tekst, højst tre skrivekørsler, oprindelig ugeperiode, aktuel kalender, dubletter og manuel test uden mail. Uafhængig kodegennemgang af den samlede rettelse havde ingen udestående P1/P2-fund.
 
 ## Bevisstandard
 
@@ -14,7 +32,7 @@ Målet er, at tekniske fejl forbliver synlige og genforsøges, at originale kild
 | Sikkerhed | Kildestrenge udføres ikke som formler; URL-politik gælder også omdirigeringer | Test af formelinput, PDF-links, HTTPS og omdirigeringer |
 | Kildehistorik | Kun dokumenterede, entydige erstatninger bruges; historiske kildedata bevares | 56 nye tests; live-sammenligning viser 39 R-markeringer og bevarede værdier, formler og noter i A–Q |
 | Kildetekst | Kun kendt 8.000-tegnsafkortning af samme kildeversion udvides | 19 tests; live 12 H-udvidelser og to R-markeringer med alle øvrige celler bevaret |
-| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | 8.2.1 installeret og fuldt genlæst; 341 aktive mangler kl. 13.32.44. Fem MOTAS-PDF’er accepteret via countTokens; den faktiske analyse fik HTTP 429. En ny rigtig tekst er fortsat udestående |
+| Drift | Kørende version, analyseefterslæb og kladde verificeres i Apps Script | Historisk 8.2.1-installation dokumenteret nedenfor. Installation og skriveprøve med 8.2.2 er endnu ikke verificeret |
 
 Ingen vægtet modelbedømmelse anvendes: dette er binære korrekthedskrav til kode. Ingen model er valgt som bedre på baggrund af disse tests. Modellerne testes med de samme simulerede API-svar, uden netværk, credentials eller rigtige emails.
 
@@ -28,7 +46,7 @@ npm test
 
 Der kræves ingen pakkeinstallation. Testene indlæser hele Apps Script-filen i en isoleret JavaScript-kontekst med simulerede tjenester og deaktiveret dynamisk kodegenerering. Koden kan ikke tilgå Node-moduler, miljøvariabler eller rigtige Google-konti fra testkonteksten.
 
-**Seneste lokale kørsel: 315/315 bestået** for 8.2.1 i det rigtige checkout. De eksisterende 296 tests er bevaret, og 19 nye tests dækker afkortet kildeinput, grænser, genkørsler, afbrydelser og syntetiske analysefelter i testdata. Ni af de nye tests fejler mod 8.2.0. Uafhængigt review fandt ingen P1/P2-fejl og bestod 19 målrettede prøver samt seks yderligere grænsekontroller. Fixture indeholder offentlige kildetekster og syntetiske analyse-/datofelter; private Sheets-analyser er ikke publiceret. Et lokalt resultat er ikke et CI-resultat eller en modelbenchmark.
+**Historisk 8.2.1-kørsel: 315/315 bestået**, genbekræftet under arbejdet med 8.2.2. De eksisterende 296 tests er bevaret, og 19 nye tests dækker afkortet kildeinput, grænser, genkørsler, afbrydelser og syntetiske analysefelter i testdata. Ni af de nye tests fejler mod 8.2.0. Uafhængigt review fandt ingen P1/P2-fejl og bestod 19 målrettede prøver samt seks yderligere grænsekontroller. Fixture indeholder offentlige kildetekster og syntetiske analyse-/datofelter; private Sheets-analyser er ikke publiceret. Et lokalt resultat er ikke et CI-resultat eller en modelbenchmark.
 
 De 56 nye tests giver 18 fejl mod 8.1.9: 11 viser ændret adfærd, mens syv alene skyldes, at den nye hjælpefunktion ikke findes i baselinen. De resterende 38 består. En særskilt uafhængig reproduktion af blandet R-/referathistorik fejlede i fem læserveje før rettelsen og bestod bagefter. Testene er ikke et bevis for analyse- eller skrivekvalitet fra en rigtig model.
 
